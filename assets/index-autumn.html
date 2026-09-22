@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Luxury Smartwatch - Cloud Edition</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com/">
+  <link rel="preconnect" href="https://fonts.gstatic.com/" crossorigin="">
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Inter:wght@400;600;800;900&family=JetBrains+Mono:wght@500;700&family=Nanum+Myeongjo:wght@700;800&family=Noto+Sans+KR:wght@400;700;900&family=Noto+Serif+KR:wght@400;700;900&display=swap" rel="stylesheet">
+  
+  <!-- Firebase SDK CDN (Modular v9/v10) -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+    import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyBcADvduLSCtHSeXajTB-IGLmF9iGu8sYc",
+      authDomain: "luxury-watch-app-111.firebaseapp.com",
+      projectId: "luxury-watch-app-111",
+      storageBucket: "luxury-watch-app-111.firebasestorage.app",
+      messagingSenderId: "46725089963",
+      appId: "1:46725089963:web:9816f9acd7c4f9a6acc5ee",
+      measurementId: "G-LDJT8YZKF1"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
+    window.saveToFirestoreAndShare = async function() {
+      try {
+        window.showToast?.('☁️ 클라우드 저장 중...');
+        const docId = 'watch_' + Math.random().toString(36).substring(2, 9);
+        
+        const watchPackage = {
+          t: document.getElementById('dialContentInput').value,
+          ff: document.getElementById('fontFamilySelect').value,
+          fs: document.getElementById('fontSizeSelect').value,
+          tc: document.getElementById('textColorPicker').value,
+          ch: document.getElementById('chimeSelect').value,
+          createdAt: new Date().toISOString()
+        };
+
+        await setDoc(doc(db, "watches", docId), watchPackage);
+
+        const currentDomain = window.location.origin + window.location.pathname;
+        const shareUrl = `${currentDomain}?id=${docId}`;
+        const userText = watchPackage.t.trim();
+        const shareMessage = `[Luxury Smartwatch 편지]\n\n${userText}\n\n👉 시계 열기:\n${shareUrl}`;
+
+        const textArea = document.createElement('textarea');
+        textArea.value = shareMessage;
+        textArea.style.position = 'fixed'; textArea.style.top = '0'; textArea.style.left = '0'; textArea.style.opacity = '0';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+
+        try {
+          const successful = document.execCommand('copy');
+          if (successful) {
+            window.showToast?.('📋 클라우드 링크 복사 완료!');
+          } else {
+            throw new Error('execCommand failed');
+          }
+        } catch (err) {
+          if (navigator.clipboard && window.isSecureContext) {
+            await navigator.clipboard.writeText(shareMessage);
+            window.showToast?.('📋 클라우드 링크 복사 완료!');
+          } else {
+            prompt("아래 링크를 복사하세요:", shareUrl);
+          }
+        }
+        document.body.removeChild(textArea);
+
+      } catch (err) {
+        console.error("Firestore Save Error: ", err);
+        window.showToast?.('❌ 저장 실패 (콘솔확인)');
+      }
+    };
+
+    window.addEventListener('DOMContentLoaded', async () => {
+      const urlParams = new URLSearchParams(window.location.search);
+      const docId = urlParams.get('id');
+
+      if (docId) {
+        try {
+          window.showToast?.('📥 클라우드 편지 불러오는 중...');
+          const docSnap = await getDoc(doc(db, "watches", docId));
+
+          if (docSnap.exists()) {
+            const data = docSnap.data();
+            const contentInput = document.getElementById('dialContentInput');
+            const fontFamilySelect = document.getElementById('fontFamilySelect');
+            const fontSizeSelect = document.getElementById('fontSizeSelect');
+            const textColorPicker = document.getElementById('textColorPicker');
+            const chimeSelect = document.getElementById('chimeSelect');
+
+            contentInput.value = data.t || '';
+            contentInput.style.fontFamily = data.ff || "'Noto Sans KR', sans-serif";
+            fontFamilySelect.value = data.ff || "'Noto Sans KR', sans-serif";
+            contentInput.style.fontSize = data.fs || '13px';
+            fontSizeSelect.value = data.fs || '13px';
+            contentInput.style.color = data.tc || '#38bdf8';
+            textColorPicker.value = data.tc || '#38bdf8';
+            chimeSelect.value = data.ch || 'cuckoo';
+
+            window.showToast?.('💌 편지 도착 완료!');
+          } else {
+            window.showToast?.('❌ 존재하지 않는 편지입니다');
+          }
+        } catch (err) {
+          console.error("Firestore Load Error: ", err);
+          window.showToast?.('❌ 데이터 로드 오류');
+        }
+      }
+    });
+  </script>
+
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 100%; height: 100%; overflow: hidden;
+      background-color: #020617; color: #ffffff;
+      font-family: 'Inter', sans-serif; user-select: none; -webkit-user-select: none;
+    }
+    .viewport-wrapper {
+      width: 100vw; height: 100vh; height: 100dvh;
+      display: flex; align-items: center; justify-content: center;
+      overflow: hidden; transition: transform 0.5s ease-out;
+    }
+    .scaler { transform-origin: center center; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .watch-container { display: flex; flex-direction: column; align-items: center; position: relative; width: 380px; }
+    .strap-top, .strap-bottom {
+      width: 192px; height: 70px; background: #091120;
+      border-top: 1px solid rgba(51, 65, 85, 0.6); box-shadow: inset 0 2px 4px rgba(0,0,0,0.8);
+      position: relative; overflow: hidden; display: flex;
+    }
+    .strap-top { border-radius: 24px 24px 0 0; align-items: flex-end; }
+    .strap-bottom { border-radius: 0 0 24px 24px; align-items: flex-start; border-bottom: 1px solid rgba(51, 65, 85, 0.6); }
+    .strap-gradient { width: 100%; height: 28px; background: linear-gradient(to bottom, transparent, rgba(0,0,0,0.8)); }
+    .strap-gradient-bottom { width: 100%; height: 28px; background: linear-gradient(to top, transparent, rgba(0,0,0,0.8)); }
+    .watch-case-row { display: flex; align-items: center; justify-content: center; margin: -6px 0; z-index: 10; position: relative; width: 100%; }
+    .titanium-frame {
+      width: 380px; height: 440px; border-radius: 60px; padding: 6px;
+      background: linear-gradient(135deg, #e2e8f0 0%, #cbd5e1 25%, #94a3b8 55%, #e2e8f0 100%);
+      box-shadow: 0 30px 70px -10px rgba(0,0,0,0.95), 0 0 50px rgba(255,255,255,0.15), inset 0 2px 2px #ffffff, inset 0 -2px 4px rgba(0,0,0,0.7);
+      display: flex; align-items: center; justify-content: center; position: relative; flex-shrink: 0;
+    }
+    .dial-viewport {
+      width: 100%; height: 100%; border-radius: 54px; background: #000000; position: relative; overflow: hidden;
+      box-shadow: inset 0 0 0 1.5px rgba(255,255,255,0.4), inset 0 15px 25px rgba(255,255,255,0.15), inset 0 -10px 20px rgba(0,0,0,0.8);
+    }
+    
+    /* 가을 단풍 및 낙엽 캔버스 배경 */
+    .autumn-bg {
+      position: absolute; inset: 0; width: 100%; height: 100%;
+      background: radial-gradient(circle at center, #1e1108 0%, #0d0603 60%, #040201 100%);
+      z-index: 1; pointer-events: none;
+    }
+
+    .top-controls { position: absolute; top: 14px; left: 14px; z-index: 40; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+    .btn-menu-main {
+      background: linear-gradient(135deg, #1e293b, #0f172a); border: 1.5px solid #38bdf8; color: #38bdf8;
+      font-size: 16px; width: 32px; height: 32px; border-radius: 8px; cursor: pointer;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.8); display: flex; align-items: center; justify-content: center; outline: none;
+    }
+    .control-panel {
+      position: absolute; top: 40px; left: 0; display: flex; flex-direction: column; align-items: stretch;
+      gap: 4px; width: 110px; padding: 6px; border: 1.5px solid rgba(56, 189, 248, 0.4); border-radius: 8px;
+      background: rgba(15, 23, 42, 0.98); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.9); backdrop-filter: blur(12px); z-index: 50;
+    }
+    .control-panel[hidden] { display: none; }
+    .btn-custom {
+      background: rgba(30, 41, 59, 0.95); border: 1px solid rgba(148, 163, 184, 0.5); color: #e2e8f0;
+      font-size: 11.5px; font-weight: 600; padding: 5px 6px; border-radius: 5px; cursor: pointer;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.6); text-align: center; width: 100%; outline: none; white-space: nowrap;
+    }
+    .btn-custom:hover { border-color: #38bdf8; color: #38bdf8; }
+    .glass-reflection {
+      position: absolute; inset: 0; border-radius: 54px;
+      background: linear-gradient(125deg, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0.04) 20%, transparent 50%, rgba(255,255,255,0.02) 80%, rgba(255,255,255,0.04) 100%);
+      pointer-events: none; z-index: 30;
+    }
+    .watch-toast {
+      position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      background: rgba(15, 23, 42, 0.98); border: 1.5px solid #38bdf8; color: #f8fafc; font-size: 13px; font-weight: 700;
+      padding: 10px 20px; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.9); z-index: 100; opacity: 0; pointer-events: none; transition: opacity 0.3s ease; white-space: nowrap;
+    }
+    .calendar-window {
+      position: absolute; top: 24px; left: 50%; transform: translateX(-50%);
+      background: radial-gradient(circle at 50% 0%, #3a1c07, #1a0b03); border: 1.5px solid #fbbf24;
+      padding: 5px 16px; display: flex; align-items: center; gap: 10px; font-family: 'Inter', sans-serif;
+      box-shadow: inset 0 2px 8px rgba(0,0,0,0.9), 0 0 16px rgba(251, 191, 36, 0.4), 0 6px 16px rgba(0,0,0,0.8); z-index: 10;
+    }
+    .cal-year-month { font-size: 13px; font-weight: 800; color: #fef3c7; letter-spacing: 1.2px; }
+    .cal-divider { width: 1.5px; height: 16px; background: rgba(251, 191, 36, 0.6); }
+    .cal-day-date { display: flex; align-items: center; gap: 6px; }
+    .cal-day-text { font-size: 14px; font-weight: 900; color: #fbbf24; }
+    .cal-date-num { font-size: 17px; font-weight: 900; color: #ffffff; }
+    .dial-input-container { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); width: 90%; max-width: 360px; display: flex; flex-direction: column; align-items: center; gap: 4px; z-index: 35; }
+    .dial-textarea {
+      width: 100%; height: 105px; background: transparent !important; border: none !important; outline: none !important;
+      font-family: 'Noto Sans KR', sans-serif; font-size: 12.5px; font-weight: 600; line-height: 1.45; color: #fde047;
+      text-align: center; resize: none; overflow: hidden !important; text-shadow: 0 2px 8px rgba(0, 0, 0, 0.95); user-select: text; -webkit-user-select: text;
+    }
+    .hand-pivot-container { position: absolute; top: 50%; left: 50%; width: 0; height: 0; pointer-events: none; z-index: 20; }
+    .hand-hour-wrapper { position: absolute; bottom: 0; left: 0; width: 0; height: 60px; transform-origin: bottom center; z-index: 20; }
+    .hour-gold-tip-wrap { position: absolute; top: 0; left: 50%; transform: translate(-50%, -50%); width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; pointer-events: none; }
+    .hour-gold-tip { position: absolute; width: 100%; height: 100%; object-fit: contain; mix-blend-mode: screen; filter: drop-shadow(0 0 4px #fef08a); }
+    .hand-minute-wrapper { position: absolute; bottom: 0; left: 0; width: 0; height: 90px; transform-origin: bottom center; z-index: 21; }
+    .minute-gold-tip-wrap { position: absolute; top: 0; left: 50%; transform: translate(-50%, -50%); width: 38px; height: 38px; display: flex; align-items: center; justify-content: center; pointer-events: none; }
+    .minute-gold-tip { position: absolute; width: 100%; height: 100%; object-fit: contain; mix-blend-mode: screen; filter: drop-shadow(0 0 5px #fef08a); }
+    .hand-time-text { position: relative; z-index: 6; font-family: 'Inter', sans-serif; font-weight: 900; color: #ffffff; text-shadow: 0 0 4px #000000, 0 0 14px #f59e0b; line-height: 1; text-align: center; }
+    .hour-text { font-size: 12px; }
+    .minute-text { display: block; font-size: 10px; }
+    .hand-second-floating { position: absolute; bottom: 0; left: 0; width: 0; height: 110px; transform-origin: bottom center; z-index: 25; }
+    .second-meteorite-wrap { position: absolute; top: 0; left: 50%; transform: translate(-50%, -50%); width: 65px; height: 65px; display: flex; align-items: center; justify-content: center; pointer-events: none; transform-origin: center center; }
+    .second-meteorite { position: absolute; width: 100%; height: 100%; object-fit: contain; mix-blend-mode: screen; pointer-events: none; z-index: 2; filter: drop-shadow(0 0 6px #fef08a); }
+    @media (max-width: 600px) {
+      .scaler { width: 100vw !important; height: 100dvh !important; transform: none !important; }
+      .watch-container { width: 100vw !important; height: 100dvh !important; justify-content: center; }
+      .strap-top, .strap-bottom { display: none !important; }
+      .watch-case-row { width: 100vw !important; height: 100dvh !important; margin: 0 !important; }
+      .titanium-frame { width: 100vw !important; height: 100dvh !important; border-radius: 0 !important; padding: 0 !important; border: none !important; }
+      .dial-viewport { border-radius: 0 !important; box-shadow: none !important; }
+      .glass-reflection { border-radius: 0 !important; }
+      .top-controls { top: 16px; left: 16px; }
+      .dial-input-container { bottom: 20px; width: 92%; }
+      .dial-textarea { height: 120px; font-size: 13px; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="viewport-wrapper" id="viewportWrapper">
+    <div class="scaler" id="scalerElement">
+      <div class="watch-container">
+        <div class="strap-top"><div class="strap-gradient"></div></div>
+        
+        <div class="watch-case-row">
+          <div class="titanium-frame">
+            <div class="dial-viewport" id="dialViewport">
+              <div class="glass-reflection"></div>
+              
+              <div class="watch-toast" id="watchToast">가을 낙엽 테마 적용 완료</div>
+
+              <div class="dial-sunray" id="dialSunray">
+                <!-- 흩날리는 가을 낙엽 캔버스 -->
+                <canvas id="autumnCanvas" class="autumn-bg"></canvas>
+
+                <div class="top-controls">
+                  <button type="button" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정">⚙️</button>
+
+                  <div id="mainMenuPanel" class="control-panel" hidden>
+                    <button type="button" class="btn-custom" onclick="toggleSubPanel('backgroundPanel', event)">배경</button>
+                    <button type="button" class="btn-custom" onclick="toggleSubPanel('soundPanel', event)">소리</button>
+                    <button type="button" class="btn-custom" onclick="toggleSubPanel('stylePanel', event)">편지</button>
+                    <button type="button" class="btn-custom" onclick="toggleSubPanel('saveSharePanel', event)">링크</button>
+                  </div>
+
+                  <div id="backgroundPanel" class="control-panel" style="left: 115px; top: 40px;" hidden>
+                    <label for="filePhotoUpload" class="btn-custom">이미지</label>
+                    <input type="file" id="filePhotoUpload" accept="image/*" style="display: none;">
+                    <label for="fileVideoUpload" class="btn-custom">영상</label>
+                    <input type="file" id="fileVideoUpload" accept="video/*" style="display: none;">
+                    <label for="fileMeteoriteUpload" class="btn-custom">초침</label>
+                    <input type="file" id="fileMeteoriteUpload" accept="image/*" style="display: none;">
+                  </div>
+
+                  <div id="soundPanel" class="control-panel" style="left: 115px; top: 70px;" hidden>
+                    <button type="button" id="recordBtn" class="btn-custom btn-action-record" onclick="toggleRecording()">녹음</button>
+                    <button type="button" id="playAudioBtn" class="btn-custom" onclick="playRecordedAudio()" style="display:none;">재생</button>
+                    <button type="button" id="motionBtn" class="btn-custom btn-motion" onclick="toggleMotionDetection()">센서</button>
+                    <select id="chimeSelect" class="chime-select" title="정시알림음 선택">
+                      <option value="cuckoo" selected>뻐꾸기</option>
+                      <option value="recorded">녹음음</option>
+                    </select>
+                  </div>
+
+                  <div id="stylePanel" class="control-panel style-controls-bar" style="left: 115px; top: 100px;" hidden>
+                    <select id="fontFamilySelect" class="style-select" title="글씨체">
+                      <option value="'Noto Serif KR', serif">명조</option>
+                      <option value="'Noto Sans KR', sans-serif" selected>고딕</option>
+                      <option value="'Nanum Myeongjo', serif">나눔</option>
+                      <option value="'Cinzel', serif">로만</option>
+                      <option value="'JetBrains Mono', monospace">모노</option>
+                    </select>
+                    <select id="fontSizeSelect" class="style-select" title="글자 크기">
+                      <option value="10px">10px</option>
+                      <option value="11px">11px</option>
+                      <option value="12px">12px</option>
+                      <option value="13px" selected>13px</option>
+                      <option value="14px">14px</option>
+                      <option value="16px">16px</option>
+                    </select>
+                    <input type="color" id="textColorPicker" class="style-color-picker" value="#fde047" title="글자 색상">
+                  </div>
+
+                  <div id="saveSharePanel" class="control-panel" style="left: 115px; top: 130px;" hidden>
+                    <button type="button" class="btn-custom" onclick="saveCurrentStateLocally()">저장</button>
+                    <button type="button" class="btn-custom btn-action-share" onclick="window.saveToFirestoreAndShare()">링크주소..</button>
+                  </div>
+                </div>
+
+                <div class="calendar-window">
+                  <div class="cal-year-month" id="calYearMonth">2026 SEP</div>
+                  <div class="cal-divider"></div>
+                  <div class="cal-day-date">
+                    <span class="cal-day-text" id="calDay">WED</span>
+                    <span class="cal-date-num" id="calDate">16</span>
+                  </div>
+                </div>
+
+                <div class="dial-input-container">
+                  <textarea class="dial-textarea" id="dialContentInput" rows="5">깊어가는 가을날, 
+붉게 물든 단풍잎처럼 고운 인연이
+그대 마음에 따스하게 머물기를 바랍니다.</textarea>
+                </div>
+
+                <div class="hand-pivot-container">
+                  <div class="hand-hour-wrapper" id="mainHourHand">
+                    <div class="hour-gold-tip-wrap">
+                      <img id="hourGoldImg" class="hour-gold-tip gold-sync-target" alt="Hour Gold Tip">
+                      <span id="hourNumText" class="hand-time-text hour-text">12</span>
+                    </div>
+                  </div>
+
+                  <div class="hand-minute-wrapper" id="mainMinuteHand">
+                    <div class="minute-gold-tip-wrap">
+                      <img id="minGoldImg" class="minute-gold-tip gold-sync-target" alt="Minute Gold Tip">
+                      <span id="minNumText" class="hand-time-text minute-text">00</span>
+                    </div>
+                  </div>
+
+                  <div class="hand-second-floating" id="secondHandPivot">
+                    <div class="second-meteorite-wrap" id="secondMeteoriteWrap">
+                      <img id="secGoldImg" class="second-meteorite gold-sync-target" alt="Second Gold Nugget">
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="strap-bottom"><div class="strap-gradient-bottom"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // 가을 낙엽 애니메이션 구동 스크립트
+    const canvas = document.getElementById('autumnCanvas');
+    const ctx = canvas.getContext('2d');
+
+    function resizeCanvas() {
+      canvas.width = canvas.parentElement.clientWidth || 380;
+      canvas.height = canvas.parentElement.clientHeight || 440;
+    }
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    const leaves = [];
+    const leafColors = ['#f97316', '#ea580c', '#ca8a04', '#dc2626', '#d97706'];
+
+    for (let i = 0; i < 25; i++) {
+      leaves.push({
+        x: Math.random() * canvas.width,
+        y: Math.random() * canvas.height - canvas.height,
+        size: Math.random() * 6 + 4,
+        speedY: Math.random() * 0.8 + 0.4,
+        speedX: Math.random() * 1 - 0.5,
+        rotation: Math.random() * 360,
+        rotationSpeed: Math.random() * 2 - 1,
+        color: leafColors[Math.floor(Math.random() * leafColors.length)]
+      });
+    }
+
+    function animateAutumn() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      leaves.forEach(leaf => {
+        leaf.y += leaf.speedY;
+        leaf.x += Math.sin(leaf.y * 0.02) + leaf.speedX;
+        leaf.rotation += leaf.rotationSpeed;
+
+        if (leaf.y > canvas.height + 10) {
+          leaf.y = -10;
+          leaf.x = Math.random() * canvas.width;
+        }
+
+        ctx.save();
+        ctx.translate(leaf.x, leaf.y);
+        ctx.rotate((leaf.rotation * Math.PI) / 180);
+        ctx.fillStyle = leaf.color;
+        ctx.beginPath();
+        ctx.ellipse(0, 0, leaf.size, leaf.size * 0.6, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      });
+
+      requestAnimationFrame(animateAutumn);
+    }
+    requestAnimationFrame(animateAutumn);
+
+    window.showToast = function(msg) {
+      const toast = document.getElementById('watchToast');
+      toast.textContent = msg;
+      toast.style.opacity = '1';
+      setTimeout(() => { toast.style.opacity = '0'; }, 2500);
+    };
+
+    function saveCurrentStateLocally() {
+      window.showToast('💾 로컬 저장 완료!');
+    }
+
+    const DEFAULT_GOLD_BASE64 = "data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3CradialGradient id='goldGlow' cx='35%25' cy='30%25' r='65%25'%3E%3Cstop offset='0%25' stop-color='%23ffffff'/%3E%3Cstop offset='25%25' stop-color='%23fef08a'/%3E%3Cstop offset='55%25' stop-color='%23eab308'/%3E%3Cstop offset='85%25' stop-color='%23a16207'/%3E%3Cstop offset='100%25' stop-color='%23451a03'/%3E%3C/radialGradient%3E%3Cfilter id='roughFacet'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.04' numOctaves='3' result='noise'/%3E%3CfeDisplacementMap in='SourceGraphic' in2='noise' scale='4' xChannelSelector='R' yChannelSelector='G'/%3E%3C/filter%3E%3C/defs%3E%3Cpath d='M45,12 C62,9 78,22 84,38 C89,52 82,68 76,80 C68,91 48,93 35,88 C20,82 12,68 14,52 C15,36 28,16 45,12 Z' fill='url(%23goldGlow)' filter='url(%23roughFacet)'/%3E%3Cpath d='M35,22 C48,20 62,28 65,40 C58,45 42,42 32,34 Z' fill='%23ffffff' opacity='0.45'/%3E%3C/svg%3E";
+
+    document.querySelectorAll('.gold-sync-target').forEach(img => { img.src = DEFAULT_GOLD_BASE64; });
+
+    const scaler = document.getElementById('scalerElement');
+    function resizeWatch() {
+      if (window.innerWidth <= 600) { scaler.style.transform = 'none'; return; }
+      const scale = Math.min((window.innerWidth * 0.94) / 380, (window.innerHeight * 0.94) / 530);
+      scaler.style.transform = `scale(${scale})`;
+    }
+    window.addEventListener('resize', resizeWatch);
+    resizeWatch();
+
+    const contentInput = document.getElementById('dialContentInput');
+    const fontFamilySelect = document.getElementById('fontFamilySelect');
+    const fontSizeSelect = document.getElementById('fontSizeSelect');
+    const textColorPicker = document.getElementById('textColorPicker');
+    const chimeSelect = document.getElementById('chimeSelect');
+
+    let mediaRecorder = null, audioChunks = [], recordedAudioBlob = null;
+    async function toggleRecording() {
+      if (!mediaRecorder || mediaRecorder.state === 'inactive') {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          audioChunks = [];
+          mediaRecorder = new MediaRecorder(stream);
+          mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
+          mediaRecorder.onstop = () => { recordedAudioBlob = new Blob(audioChunks, { type: 'audio/webm' }); document.getElementById('playAudioBtn').style.display = 'block'; window.showToast('🎤 녹음 완료!'); };
+          mediaRecorder.start();
+          document.getElementById('recordBtn').classList.add('recording');
+          document.getElementById('recordBtn').textContent = '중지';
+          window.showToast('🔴 녹음 중...');
+        } catch (err) { window.showToast('❌ 마이크 권한 거부됨'); }
+      } else if (mediaRecorder.state === 'recording') {
+        mediaRecorder.stop();
+        document.getElementById('recordBtn').classList.remove('recording');
+        document.getElementById('recordBtn').textContent = '녹음';
+        mediaRecorder.stream.getTracks().forEach(t => t.stop());
+      }
+    }
+
+    function playRecordedAudio() {
+      if (!recordedAudioBlob) { window.showToast('녹음 파일이 없습니다'); return; }
+      new Audio(URL.createObjectURL(recordedAudioBlob)).play().catch(() => {});
+      window.showToast('▶ 녹음 재생');
+    }
+
+    function toggleControlPanel(panelId, event) {
+      if (event) event.stopPropagation();
+      const target = document.getElementById(panelId), shouldOpen = target.hidden;
+      document.querySelectorAll('.control-panel').forEach(p => { p.hidden = true; });
+      target.hidden = !shouldOpen;
+    }
+
+    function toggleSubPanel(panelId, event) {
+      if (event) event.stopPropagation();
+      const target = document.getElementById(panelId), shouldOpen = target.hidden;
+      ['backgroundPanel', 'soundPanel', 'stylePanel', 'saveSharePanel'].forEach(id => { document.getElementById(id).hidden = true; });
+      target.hidden = !shouldOpen;
+    }
+
+    document.addEventListener('click', (event) => {
+      if (!event.target.closest('.top-controls')) { document.querySelectorAll('.control-panel').forEach(p => { p.hidden = true; }); }
+    });
+
+    contentInput.addEventListener('input', () => { contentInput.style.color = textColorPicker.value; });
+    fontFamilySelect.addEventListener('change', e => { contentInput.style.fontFamily = e.target.value; });
+    fontSizeSelect.addEventListener('change', e => { contentInput.style.fontSize = e.target.value; });
+    textColorPicker.addEventListener('input', e => { contentInput.style.color = e.target.value; });
+
+    const hourHand = document.getElementById('mainHourHand'), minHand = document.getElementById('mainMinuteHand'), secPivot = document.getElementById('secondHandPivot'), secondMeteoriteWrap = document.getElementById('secondMeteoriteWrap');
+    const hourNumText = document.getElementById('hourNumText'), minNumText = document.getElementById('minNumText');
+    const calYearMonth = document.getElementById('calYearMonth'), calDay = document.getElementById('calDay'), calDate = document.getElementById('calDate');
+    const monthNames = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'], dayNames = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+
+    function tickWatch() {
+      const now = new Date(), h = now.getHours(), m = now.getMinutes(), s = now.getSeconds(), ms = now.getMilliseconds();
+      const secAngle = -((s + ms / 1000) / 60) * 360, minAngle = ((m + s / 60) / 60) * 360, hourAngle = (((h % 12) + m / 60) / 12) * 360;
+
+      secPivot.style.transform = `rotate(${secAngle}deg)`;
+      minHand.style.transform = `rotate(${minAngle}deg)`;
+      hourHand.style.transform = `rotate(${hourAngle}deg)`;
+      secondMeteoriteWrap.style.transform = `translate(-50%, -50%) rotate(${-secAngle}deg)`;
+
+      hourNumText.innerText = h % 12 === 0 ? 12 : h % 12;
+      minNumText.innerText = String(m).padStart(2, '0');
+      hourNumText.style.transform = `rotate(-${hourAngle}deg)`;
+      minNumText.style.transform = `rotate(-${minAngle}deg)`;
+
+      calYearMonth.innerText = `${now.getFullYear()} ${monthNames[now.getMonth()]}`;
+      calDay.innerText = dayNames[now.getDay()];
+      calDate.innerText = String(now.getDate()).padStart(2, '0');
+
+      requestAnimationFrame(tickWatch);
+    }
+    requestAnimationFrame(tickWatch);
+  </script>
+</body>
+</html>
