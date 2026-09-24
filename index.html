@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Luxury Smartwatch - Standard Edition v1.2</title>
+  <title>Luxury Smartwatch - Standard Edition v1.5 AI Narrator</title>
   <link rel="preconnect" href="https://fonts.googleapis.com/">
   <link rel="preconnect" href="https://fonts.gstatic.com/" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Inter:wght@400;600;800;900&family=JetBrains+Mono:wght@500;700&family=Nanum+Myeongjo:wght@700;800&family=Noto+Sans+KR:wght@400;700;900&family=Noto+Serif+KR:wght@400;700;900&display=swap" rel="stylesheet">
@@ -29,6 +29,9 @@
 
     window.recordedAudioBlob = null;
     window.remoteAudioUrl = '';
+    window.aiNarratorBlob = null;
+    window.remoteNarratorAudioUrl = '';
+    window.aiNarratorObjectUrl = '';
     window.customBackgroundBlob = null;
     window.customBackgroundType = '';
     window.remoteBackgroundUrl = '';
@@ -36,7 +39,7 @@
     window.customMeteorBlob = null;
     window.remoteMeteorUrl = '';
 
-    const SCHEMA_VERSION = 2;
+    const SCHEMA_VERSION = 4;
 
     function newWatchId() {
       if (window.crypto?.getRandomValues) {
@@ -73,7 +76,9 @@
         fontFamily: raw.fontFamily ?? raw.ff ?? "'Noto Sans KR', sans-serif",
         fontSize: raw.fontSize ?? raw.fs ?? '13px',
         textColor: raw.textColor ?? raw.tc ?? '#fbcfe8',
-        chime: raw.chime ?? raw.ch ?? 'cuckoo',
+        chime: raw.chime ?? raw.ch ?? 'rooster',
+        narrator: raw.narrator ?? 'female',
+        narratorAudioUrl: raw.narratorAudioUrl || '',
         audioUrl: raw.audioUrl || '',
         backgroundUrl: raw.backgroundUrl || '',
         backgroundType: raw.backgroundType || '',
@@ -92,6 +97,7 @@
         const docId = newWatchId(); // 항상 새 링크 생성
 
         let audioUrl = window.remoteAudioUrl || '';
+        let narratorAudioUrl = window.remoteNarratorAudioUrl || '';
         let backgroundUrl = window.remoteBackgroundUrl || '';
         let backgroundType = window.remoteBackgroundType || '';
         let meteorUrl = window.remoteMeteorUrl || '';
@@ -101,6 +107,12 @@
           window.showToast?.('🎙️ 음성 업로드 중...');
           const ext = extFromBlob(window.recordedAudioBlob, 'webm');
           audioUrl = await uploadBlob(`audio_letters/${docId}.${ext}`, window.recordedAudioBlob);
+        }
+
+        // AI 내레이터가 새로 생성되었으면 MP3를 Storage에 저장
+        if (window.aiNarratorBlob) {
+          window.showToast?.('😊 AI 내레이터 음성 업로드 중...');
+          narratorAudioUrl = await uploadBlob(`narrators/${docId}.mp3`, window.aiNarratorBlob);
         }
 
         if (window.customBackgroundBlob) {
@@ -123,6 +135,8 @@
           fontSize: document.getElementById('fontSizeSelect').value,
           textColor: document.getElementById('textColorPicker').value,
           chime: document.getElementById('chimeSelect').value,
+          narrator: document.getElementById('narratorSelect')?.value || 'female',
+          narratorAudioUrl,
           audioUrl,
           backgroundUrl,
           backgroundType,
@@ -313,7 +327,7 @@
                     <button type="button" class="btn-custom" onclick="toggleSubPanel('backgroundPanel', event)">배경</button>
                     <button type="button" class="btn-custom" onclick="toggleSubPanel('soundPanel', event)">소리</button>
                     <button type="button" class="btn-custom" onclick="toggleSubPanel('letterPanel', event)">편지</button>
-                    <button type="button" class="btn-custom" onclick="toggleSubPanel('saveSharePanel', event)">저장/링크</button>
+                    <button type="button" class="btn-custom" onclick="toggleSubPanel('saveSharePanel', event)">저장</button>
                   </div>
 
                   <div id="backgroundPanel" class="control-panel" style="left:115px;top:40px" hidden>
@@ -326,11 +340,11 @@
                   </div>
 
                   <div id="soundPanel" class="control-panel" style="left:115px;top:70px" hidden>
-                    <button type="button" id="recordBtn" class="btn-custom btn-action-record" onclick="toggleRecording()">녹음</button>
-                    <button type="button" id="playAudioBtn" class="btn-custom" onclick="playRecordedAudio()" style="display:none;background:rgba(236,72,153,.9);color:#fff;font-weight:800">▶ 음성 편지 재생</button>
+                    <button type="button" id="recordBtn" class="btn-custom btn-action-record" onclick="toggleRecording()">🎙 녹음</button>
+                    <button type="button" id="playAudioBtn" class="btn-custom" onclick="playRecordedAudio()" style="display:none;background:rgba(236,72,153,.9);color:#fff;font-weight:800">▶ 재생음</button>
                     <select id="chimeSelect" class="chime-select" title="정시알림음 선택">
-                      <option value="cuckoo" selected>뻐꾸기</option>
-                      <option value="recorded">녹음음</option>
+                      <option value="rooster" selected>🐓 닭소리</option>
+                      <option value="recorded">🎙 녹음소리</option>
                     </select>
                   </div>
 
@@ -347,11 +361,18 @@
                       <option value="13px" selected>13px</option><option value="14px">14px</option><option value="16px">16px</option>
                     </select>
                     <input type="color" id="textColorPicker" class="style-color-picker" value="#fbcfe8" title="글자 색상">
+                    <select id="narratorSelect" class="style-select" title="내레이터">
+                      <option value="male">😊 남자 · 따뜻하게</option>
+                      <option value="female" selected>😊 여자 · 밝게</option>
+                    </select>
+                    <button type="button" class="btn-custom" onclick="playNarration()">▶ AI 미소 내레이터</button>
+                    <button type="button" class="btn-custom" onclick="stopNarration()">■ 정지</button>
+                    <div style="font-size:9px;line-height:1.25;color:#fbcfe8;text-align:center;padding:2px 1px;">AI로 생성된 음성입니다</div>
                   </div>
 
                   <div id="saveSharePanel" class="control-panel" style="left:115px;top:130px" hidden>
                     <button type="button" class="btn-custom" onclick="saveCurrentStateLocally()">저장</button>
-                    <button type="button" class="btn-custom" onclick="window.saveToFirestoreAndShare()">카톡/링크</button>
+                    <button type="button" class="btn-custom" onclick="window.saveToFirestoreAndShare()">카톡링크</button>
                   </div>
                 </div>
 
@@ -416,13 +437,15 @@
       ff.value=data.fontFamily||"'Noto Sans KR', sans-serif"; input.style.fontFamily=ff.value;
       fs.value=data.fontSize||'13px'; input.style.fontSize=fs.value;
       tc.value=data.textColor||'#fbcfe8'; input.style.color=tc.value;
-      ch.value=data.chime||'cuckoo';
+      ch.value=data.chime||'rooster';
+      const narrator=document.getElementById('narratorSelect'); if(narrator) narrator.value=data.narrator||'female';
 
       window.recordedAudioBlob=null;
       window.remoteAudioUrl=data.audioUrl||'';
+      window.remoteNarratorAudioUrl=data.narratorAudioUrl||'';
       const playBtn=document.getElementById('playAudioBtn');
       playBtn.style.display=window.remoteAudioUrl?'block':'none';
-      playBtn.textContent='▶ 음성 편지 재생';
+      playBtn.textContent='▶ 재생음';
 
       window.customBackgroundBlob=null;
       window.remoteBackgroundUrl=data.backgroundUrl||'';
@@ -454,6 +477,7 @@
           fontSize:document.getElementById('fontSizeSelect').value,
           textColor:document.getElementById('textColorPicker').value,
           chime:document.getElementById('chimeSelect').value,
+          narrator:document.getElementById('narratorSelect')?.value||'female',
           savedAt:new Date().toISOString()
         }));
         if(window.recordedAudioBlob) await dbPut('audio',window.recordedAudioBlob);
@@ -473,8 +497,9 @@
           if(s.fontSize){document.getElementById('fontSizeSelect').value=s.fontSize;input.style.fontSize=s.fontSize;}
           if(s.textColor){document.getElementById('textColorPicker').value=s.textColor;input.style.color=s.textColor;}
           if(s.chime) document.getElementById('chimeSelect').value=s.chime;
+          if(s.narrator&&document.getElementById('narratorSelect')) document.getElementById('narratorSelect').value=s.narrator;
         }
-        const audio=await dbGet('audio'); if(audio){window.recordedAudioBlob=audio; const b=document.getElementById('playAudioBtn'); b.style.display='block'; b.textContent='▶ 저장된 음성 재생';}
+        const audio=await dbGet('audio'); if(audio){window.recordedAudioBlob=audio; const b=document.getElementById('playAudioBtn'); b.style.display='block'; b.textContent='▶ 재생음';}
         const bg=await dbGet('background'); if(bg?.blob){window.customBackgroundBlob=bg.blob;window.customBackgroundType=bg.type;window.applyBackground(URL.createObjectURL(bg.blob),bg.type);}
         const meteor=await dbGet('meteor'); if(meteor){window.customMeteorBlob=meteor;document.getElementById('secGoldImg').src=URL.createObjectURL(meteor);}
         if(raw||audio||bg||meteor) window.showToast('💾 저장 상태 복원 완료');
@@ -510,18 +535,18 @@
             const mime=mediaRecorder.mimeType||'audio/webm';
             window.recordedAudioBlob=new Blob(audioChunks,{type:mime});
             window.remoteAudioUrl=''; // 새 녹음이 이전 원격 음성을 대체
-            const b=document.getElementById('playAudioBtn'); b.style.display='block'; b.textContent='▶ 방금 녹음 재생';
+            const b=document.getElementById('playAudioBtn'); b.style.display='block'; b.textContent='▶ 재생음';
             window.showToast('🎤 녹음 완료 — 저장 또는 공유하세요');
           };
           mediaRecorder.start();
           document.getElementById('recordBtn').classList.add('recording');
-          document.getElementById('recordBtn').textContent='중지';
+          document.getElementById('recordBtn').textContent='■ 중지';
           window.showToast('🔴 녹음 중...');
         }catch(err){console.error(err);window.showToast('❌ 마이크 권한을 확인하세요');}
       }else if(mediaRecorder.state==='recording'){
         mediaRecorder.stop();
         document.getElementById('recordBtn').classList.remove('recording');
-        document.getElementById('recordBtn').textContent='녹음';
+        document.getElementById('recordBtn').textContent='🎙 녹음';
         mediaRecorder.stream.getTracks().forEach(t=>t.stop());
       }
     }
@@ -537,6 +562,253 @@
       if(currentAudio) currentAudio.pause();
       currentAudio=new Audio(src);
       currentAudio.play().then(()=>window.showToast('▶ 음성 편지 재생 중')).catch(()=>window.showToast('화면을 터치한 후 다시 재생하세요'));
+    }
+
+    // ---------- AI 편지 내레이터 v1.5 ----------
+    // 기본: Vercel /api/tts -> OpenAI TTS MP3
+    // 실패 시: 브라우저 speechSynthesis fallback
+    let narrationUtterance = null;
+    let currentNarratorAudio = null;
+    let narratorRequestController = null;
+    let cachedNarratorVoices = [];
+
+    function refreshNarratorVoices(){
+      if(!('speechSynthesis' in window)) return [];
+      cachedNarratorVoices = speechSynthesis.getVoices() || [];
+      return cachedNarratorVoices;
+    }
+
+    function getKoreanVoices(){
+      return refreshNarratorVoices().filter(v =>
+        /^ko(?:-|_)/i.test(v.lang || '') || /korean|한국/i.test(v.name || '')
+      );
+    }
+
+    function chooseFallbackVoice(gender){
+      const ko = getKoreanVoices();
+      if(!ko.length) return null;
+      const maleHints = ['male','man','minsu','minjun','injoon','hyunsu','seojun','woojin','남성','남자'];
+      const femaleHints = ['female','woman','yuna','sora','sunhi','heami','yuri','seoyeon','jiyeon','여성','여자'];
+      const hints = gender === 'male' ? maleHints : femaleHints;
+      return ko.find(v => hints.some(h => (v.name || '').toLowerCase().includes(h.toLowerCase())))
+        || (gender === 'female' ? ko[0] : null);
+    }
+
+    function makeWarmNarrationText(rawText){
+      return rawText
+        .replace(/\r\n/g, '\n')
+        .replace(/\n{2,}/g, '. ')
+        .replace(/\n/g, ', ')
+        .replace(/([.!?])\s*/g, '$1  ')
+        .replace(/,{2,}/g, ',')
+        .replace(/\s{3,}/g, '  ')
+        .trim();
+    }
+
+    function stopNarration(){
+      try { narratorRequestController?.abort(); } catch(_) {}
+      narratorRequestController = null;
+
+      if(currentNarratorAudio){
+        try { currentNarratorAudio.pause(); currentNarratorAudio.currentTime = 0; } catch(_) {}
+        currentNarratorAudio = null;
+      }
+
+      if('speechSynthesis' in window){
+        try { speechSynthesis.cancel(); } catch(_) {}
+      }
+
+      window.showToast('■ 내레이터 정지');
+    }
+
+    async function playAiNarratorBlob(blob, gender){
+      if(window.aiNarratorObjectUrl){
+        try { URL.revokeObjectURL(window.aiNarratorObjectUrl); } catch(_) {}
+      }
+
+      window.aiNarratorObjectUrl = URL.createObjectURL(blob);
+      currentNarratorAudio = new Audio(window.aiNarratorObjectUrl);
+
+      currentNarratorAudio.onended = () => {
+        window.showToast('💌 AI 내레이터 읽기 완료');
+      };
+
+      await currentNarratorAudio.play();
+      window.showToast(
+        gender === 'male'
+          ? '😊 따뜻한 AI 남자 목소리로 읽는 중'
+          : '😊 밝은 AI 여자 목소리로 읽는 중'
+      );
+    }
+
+    async function playRemoteNarrator(url, gender){
+      currentNarratorAudio = new Audio(url);
+      currentNarratorAudio.onended = () => window.showToast('💌 AI 내레이터 읽기 완료');
+      await currentNarratorAudio.play();
+      window.showToast(
+        gender === 'male'
+          ? '😊 저장된 AI 남자 목소리 재생 중'
+          : '😊 저장된 AI 여자 목소리 재생 중'
+      );
+    }
+
+    async function browserNarratorFallback(rawText, gender){
+      if(!('speechSynthesis' in window)){
+        window.showToast('❌ AI 음성 생성 실패');
+        return;
+      }
+
+      try { speechSynthesis.resume(); } catch(_) {}
+      speechSynthesis.cancel();
+
+      narrationUtterance = new SpeechSynthesisUtterance(makeWarmNarrationText(rawText));
+      narrationUtterance.lang = 'ko-KR';
+      narrationUtterance.volume = 1.0;
+      narrationUtterance.rate = gender === 'male' ? 0.90 : 0.95;
+      narrationUtterance.pitch = gender === 'male' ? 0.78 : 1.10;
+
+      const voice = chooseFallbackVoice(gender);
+      if(voice) narrationUtterance.voice = voice;
+
+      narrationUtterance.onstart = () =>
+        window.showToast('📱 브라우저 예비 음성으로 재생 중');
+      narrationUtterance.onend = () =>
+        window.showToast('💌 내레이터 읽기 완료');
+      narrationUtterance.onerror = () =>
+        window.showToast('❌ 내레이터 재생 오류');
+
+      setTimeout(() => {
+        try {
+          speechSynthesis.resume();
+          speechSynthesis.speak(narrationUtterance);
+        } catch(_) {
+          window.showToast('❌ 내레이터 실행 실패');
+        }
+      }, 80);
+    }
+
+    async function playNarration(){
+      const rawText = document.getElementById('dialContentInput').value.trim();
+      if(!rawText){
+        window.showToast('읽을 편지 내용이 없습니다');
+        return;
+      }
+
+      const gender = document.getElementById('narratorSelect')?.value || 'female';
+
+      // 같은 문장으로 이미 생성한 로컬 AI 음성이 있으면 API를 다시 호출하지 않는다.
+      if(window.aiNarratorBlob){
+        try {
+          await playAiNarratorBlob(window.aiNarratorBlob, gender);
+          return;
+        } catch(err) {
+          console.warn('Local AI narrator play failed:', err);
+        }
+      }
+
+      // 공유받은 링크에 저장된 AI 내레이터가 있으면 그대로 재생한다.
+      if(window.remoteNarratorAudioUrl){
+        try {
+          await playRemoteNarrator(window.remoteNarratorAudioUrl, gender);
+          return;
+        } catch(err) {
+          console.warn('Remote AI narrator play failed:', err);
+        }
+      }
+
+      stopNarration();
+      window.showToast('✨ AI 내레이터 생성 중...');
+
+      try {
+        narratorRequestController = new AbortController();
+
+        const res = await fetch('/api/tts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text: rawText,
+            gender
+          }),
+          signal: narratorRequestController.signal
+        });
+
+        if(!res.ok){
+          let message = `TTS ${res.status}`;
+          try {
+            const data = await res.json();
+            message = data?.error || message;
+          } catch(_) {}
+          throw new Error(message);
+        }
+
+        const blob = await res.blob();
+        if(!blob.size) throw new Error('빈 음성 파일');
+
+        window.aiNarratorBlob = new Blob([blob], { type: blob.type || 'audio/mpeg' });
+        window.remoteNarratorAudioUrl = '';
+
+        try { await idbSet('aiNarratorAudio', window.aiNarratorBlob); } catch(_) {}
+
+        await playAiNarratorBlob(window.aiNarratorBlob, gender);
+
+      } catch(err) {
+        if(err?.name === 'AbortError') return;
+        console.error('AI Narrator error:', err);
+        window.showToast('⚠️ AI 음성 실패 · 예비 음성 사용');
+        await browserNarratorFallback(rawText, gender);
+      } finally {
+        narratorRequestController = null;
+      }
+    }
+
+    if('speechSynthesis' in window){
+      refreshNarratorVoices();
+      speechSynthesis.addEventListener?.('voiceschanged', refreshNarratorVoices);
+    }
+
+    // ---------- 정시 알림음 ----------
+    let lastHourlyKey = '';
+    function playRoosterChime(){
+      try{
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if(!AC) throw new Error('no audio context');
+        const ctx = new AC();
+        const now = ctx.currentTime;
+        const sweeps = [
+          {t:0.00, f1:520, f2:760, d:0.22},
+          {t:0.24, f1:650, f2:980, d:0.28},
+          {t:0.56, f1:470, f2:820, d:0.36}
+        ];
+        sweeps.forEach(x=>{
+          const osc=ctx.createOscillator(), gain=ctx.createGain();
+          osc.type='sawtooth';
+          osc.frequency.setValueAtTime(x.f1, now+x.t);
+          osc.frequency.exponentialRampToValueAtTime(x.f2, now+x.t+x.d*0.45);
+          osc.frequency.exponentialRampToValueAtTime(Math.max(260,x.f1*0.65), now+x.t+x.d);
+          gain.gain.setValueAtTime(0.0001, now+x.t);
+          gain.gain.exponentialRampToValueAtTime(0.16, now+x.t+0.03);
+          gain.gain.exponentialRampToValueAtTime(0.0001, now+x.t+x.d);
+          osc.connect(gain).connect(ctx.destination);
+          osc.start(now+x.t); osc.stop(now+x.t+x.d+0.02);
+        });
+        setTimeout(()=>ctx.close().catch(()=>{}),1400);
+      }catch(e){ window.showToast('🐓 닭소리를 재생할 수 없습니다'); }
+    }
+    function playHourlyChime(){
+      const choice=document.getElementById('chimeSelect')?.value;
+      if(choice==='recorded'){
+        if(window.recordedAudioBlob || window.remoteAudioUrl) playRecordedAudio();
+        else window.showToast('정시 녹음소리가 없습니다');
+      }else if(choice==='rooster'){
+        playRoosterChime();
+      }
+    }
+    function checkHourlyChime(now){
+      if(now.getMinutes()!==0 || now.getSeconds()!==0) return;
+      const key=`${now.getFullYear()}-${now.getMonth()}-${now.getDate()}-${now.getHours()}`;
+      if(key===lastHourlyKey) return;
+      lastHourlyKey=key;
+      playHourlyChime();
     }
 
     // ---------- 메뉴 ----------
@@ -556,12 +828,18 @@
     addEventListener('resize',resizeWatch); resizeWatch();
 
     // ---------- 시계 ----------
+    contentInput.addEventListener('input', () => {
+      window.aiNarratorBlob = null;
+      window.remoteNarratorAudioUrl = '';
+    });
+
     const hourHand=document.getElementById('mainHourHand'),minHand=document.getElementById('mainMinuteHand'),secPivot=document.getElementById('secondHandPivot'),secondMeteoriteWrap=document.getElementById('secondMeteoriteWrap');
     const hourNumText=document.getElementById('hourNumText'),minNumText=document.getElementById('minNumText');
     const calYearMonth=document.getElementById('calYearMonth'),calDay=document.getElementById('calDay'),calDate=document.getElementById('calDate');
     const monthNames=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'],dayNames=['SUN','MON','TUE','WED','THU','FRI','SAT'];
     function tickWatch(){
       const now=new Date(),h=now.getHours(),m=now.getMinutes(),s=now.getSeconds(),ms=now.getMilliseconds();
+      checkHourlyChime(now);
       const secAngle=-((s+ms/1000)/60)*360,minAngle=((m+s/60)/60)*360,hourAngle=(((h%12)+m/60)/12)*360;
       secPivot.style.transform=`rotate(${secAngle}deg)`; minHand.style.transform=`rotate(${minAngle}deg)`; hourHand.style.transform=`rotate(${hourAngle}deg)`;
       secondMeteoriteWrap.style.transform=`translate(-50%,-50%) rotate(${-secAngle}deg)`;
