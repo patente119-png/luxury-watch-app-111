@@ -11,42 +11,39 @@ export default async function handler(req, res) {
     });
   }
 
-  const { text, gender } = req.body || {};
-  const input = String(text || '').trim();
-
-  if (!input) {
-    return res.status(400).json({ error: '읽을 편지 내용이 없습니다.' });
-  }
-
-  // 편지 앱의 과도한 비용/긴 대기 방지
-  if (input.length > 1800) {
-    return res.status(400).json({ error: '편지는 1800자 이하로 작성해주세요.' });
-  }
-
-  // 두 목소리를 고정해 기기와 무관하게 일관성 유지.
-  // OpenAI built-in voice availability may evolve; these are current recommended-quality voices.
-  const isMale = gender === 'male';
-  const voice = isMale ? 'cedar' : 'marin';
-
-  const instructions = isMale
-    ? [
-        'Speak in natural Korean.',
-        'Warm, gentle adult male narrator with a comfortable medium-low register.',
-        'Sound as if smiling softly while reading a heartfelt personal letter.',
-        'Calm, sincere, affectionate, never exaggerated or comedic.',
-        'Use natural pauses at punctuation and line breaks.',
-        'Slightly relaxed pace and clear diction.'
-      ].join(' ')
-    : [
-        'Speak in natural Korean.',
-        'Warm, bright adult female narrator with a soft friendly smile in the voice.',
-        'Read like a heartfelt personal letter, affectionate and sincere.',
-        'Never exaggerated or childish.',
-        'Use natural pauses at punctuation and line breaks.',
-        'Gentle relaxed pace and clear diction.'
-      ].join(' ');
-
   try {
+    const { text, gender = 'female', style = 'smiling' } = req.body || {};
+    const input = String(text || '').trim().slice(0, 1800);
+
+    if (!input) {
+      return res.status(400).json({ error: '읽을 편지 내용이 없습니다.' });
+    }
+
+    const isMale = gender === 'male';
+    const voice = isMale ? 'cedar' : 'marin';
+
+    const instructions = isMale
+      ? [
+          'Speak natural Korean as a warm adult male reading a personal letter to someone he cares about.',
+          'Sound as if you are genuinely smiling while speaking: a soft audible smile, slightly brighter resonance, gentle upward warmth, relaxed cheeks, and friendly eyes in the voice.',
+          'Keep the smile present throughout the sentence, especially at greetings and affectionate phrases.',
+          'Use a calm medium-low register, intimate distance, clear diction, and natural breathing.',
+          'Pace should be relaxed and conversational, around 0.92x normal speed.',
+          'Add small natural pauses at commas and sentence endings.',
+          'Do not laugh, giggle, act comedic, sound like an announcer, or exaggerate emotion.',
+          'The result should feel sincere, affectionate, reassuring, and softly smiling.'
+        ].join(' ')
+      : [
+          'Speak natural Korean as a warm adult female reading a heartfelt personal letter.',
+          'Sound as if you are genuinely smiling while speaking: a clearly audible but gentle smile, bright warm resonance, relaxed cheeks, and friendly eyes in the voice.',
+          'Keep the smile present throughout the sentence, especially at greetings and affectionate phrases.',
+          'Use a soft, clear, intimate conversational tone with natural breathing.',
+          'Pace should be relaxed and slightly lively, around 0.96x normal speed.',
+          'Add small natural pauses at commas and sentence endings.',
+          'Do not giggle, sound childish, theatrical, overly cute, or like an announcer.',
+          'The result should feel sincere, affectionate, comforting, and naturally smiling.'
+        ].join(' ');
+
     const response = await fetch('https://api.openai.com/v1/audio/speech', {
       method: 'POST',
       headers: {
@@ -58,30 +55,28 @@ export default async function handler(req, res) {
         voice,
         input,
         instructions,
-        response_format: 'mp3'
+        response_format: 'mp3',
+        speed: isMale ? 0.92 : 0.96
       })
     });
 
     if (!response.ok) {
-      const details = await response.text();
-      console.error('OpenAI TTS error:', response.status, details);
-      return res.status(502).json({
-        error: 'AI 내레이터 생성에 실패했습니다.'
+      const errorText = await response.text();
+      console.error('OpenAI TTS error:', response.status, errorText);
+      return res.status(response.status).json({
+        error: 'AI 미소 음성 생성에 실패했습니다.'
       });
     }
 
-    const arrayBuffer = await response.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-
+    const audio = Buffer.from(await response.arrayBuffer());
     res.setHeader('Content-Type', 'audio/mpeg');
-    res.setHeader('Cache-Control', 'private, max-age=0, no-store');
-    res.setHeader('X-AI-Generated-Audio', 'true');
-    return res.status(200).send(buffer);
+    res.setHeader('Cache-Control', 'no-store');
+    return res.status(200).send(audio);
 
   } catch (error) {
     console.error('TTS server error:', error);
     return res.status(500).json({
-      error: 'AI 내레이터 서버 오류가 발생했습니다.'
+      error: 'AI 미소 음성 생성 중 서버 오류가 발생했습니다.'
     });
   }
 }

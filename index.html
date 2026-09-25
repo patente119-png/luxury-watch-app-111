@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Luxury Smartwatch - Standard Edition v1.5 AI Narrator</title>
+  <title>Luxury Smartwatch - Standard Edition v1.9.5 Smiling AI Narrator</title>
   <link rel="preconnect" href="https://fonts.googleapis.com/">
   <link rel="preconnect" href="https://fonts.gstatic.com/" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Inter:wght@400;600;800;900&family=JetBrains+Mono:wght@500;700&family=Nanum+Myeongjo:wght@700;800&family=Noto+Sans+KR:wght@400;700;900&family=Noto+Serif+KR:wght@400;700;900&display=swap" rel="stylesheet">
@@ -33,13 +33,18 @@
     window.remoteNarratorAudioUrl = '';
     window.aiNarratorObjectUrl = '';
     window.customBackgroundBlob = null;
+    window.backgroundPlaylistBlobs = [];
+    window.backgroundPlaylist = [];
+    window.backgroundRotationTimer = null;
+    window.backgroundRotationIndex = 0;
+    window.backgroundRotationSeconds = 15;
     window.customBackgroundType = '';
     window.remoteBackgroundUrl = '';
     window.remoteBackgroundType = '';
     window.customMeteorBlob = null;
     window.remoteMeteorUrl = '';
 
-    const SCHEMA_VERSION = 4;
+    const SCHEMA_VERSION = 5;
 
     function newWatchId() {
       if (window.crypto?.getRandomValues) {
@@ -82,6 +87,8 @@
         audioUrl: raw.audioUrl || '',
         backgroundUrl: raw.backgroundUrl || '',
         backgroundType: raw.backgroundType || '',
+        backgroundPlaylist: Array.isArray(raw.backgroundPlaylist) ? raw.backgroundPlaylist : [],
+        backgroundRotationSeconds: Number(raw.backgroundRotationSeconds || 15),
         meteorUrl: raw.meteorUrl || '',
         parentId: raw.parentId || null,
         createdAt: raw.createdAt || '',
@@ -115,7 +122,22 @@
           narratorAudioUrl = await uploadBlob(`narrators/${docId}.mp3`, window.aiNarratorBlob);
         }
 
-        if (window.customBackgroundBlob) {
+        let backgroundPlaylist = Array.isArray(window.backgroundPlaylist) ? [...window.backgroundPlaylist] : [];
+
+        if (Array.isArray(window.backgroundPlaylistBlobs) && window.backgroundPlaylistBlobs.length) {
+          window.showToast?.('🌌 배경 묶음 업로드 중...');
+          backgroundPlaylist = [];
+          for (let i = 0; i < window.backgroundPlaylistBlobs.length; i++) {
+            const item = window.backgroundPlaylistBlobs[i];
+            const ext = extFromBlob(item.blob, item.type === 'video' ? 'mp4' : 'jpg');
+            const url = await uploadBlob(`backgrounds/${docId}_${i}.${ext}`, item.blob);
+            backgroundPlaylist.push({ url, type: item.type });
+          }
+          if (backgroundPlaylist[0]) {
+            backgroundUrl = backgroundPlaylist[0].url;
+            backgroundType = backgroundPlaylist[0].type;
+          }
+        } else if (window.customBackgroundBlob) {
           window.showToast?.('🌌 배경 업로드 중...');
           const ext = extFromBlob(window.customBackgroundBlob, window.customBackgroundType === 'video' ? 'mp4' : 'jpg');
           backgroundUrl = await uploadBlob(`backgrounds/${docId}.${ext}`, window.customBackgroundBlob);
@@ -140,6 +162,8 @@
           audioUrl,
           backgroundUrl,
           backgroundType,
+          backgroundPlaylist,
+          backgroundRotationSeconds: Number(document.getElementById('backgroundIntervalSelect')?.value || window.backgroundRotationSeconds || 15),
           meteorUrl,
           parentId: sourceId,
           createdAt: new Date().toISOString(),
@@ -237,71 +261,288 @@
   </script>
 
   <style>
+    :root {
+      --ui-bg: rgba(10, 14, 22, 0.92);
+      --ui-bg-soft: rgba(18, 24, 34, 0.90);
+      --ui-border: #7b8796;
+      --ui-border-strong: #aeb8c5;
+      --ui-accent: #7dd3fc;
+      --ui-accent-soft: rgba(125, 211, 252, 0.16);
+      --ui-text: #f8fafc;
+      --ui-text-soft: #cbd5e1;
+      --ui-shadow: rgba(0,0,0,0.75);
+    }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     html, body { width: 100%; height: 100%; overflow: hidden; background:#020617; color:#fff; font-family:'Inter',sans-serif; user-select:none; -webkit-user-select:none; }
     .viewport-wrapper { width:100vw; height:100vh; height:100dvh; display:flex; align-items:center; justify-content:center; overflow:hidden; }
     .scaler { transform-origin:center; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
     .watch-container { display:flex; flex-direction:column; align-items:center; position:relative; width:380px; }
-    .strap-top,.strap-bottom { width:192px; height:70px; background:#091120; border-top:1px solid rgba(51,65,85,.6); box-shadow:inset 0 2px 4px rgba(0,0,0,.8); position:relative; overflow:hidden; display:flex; }
-    .strap-top { border-radius:24px 24px 0 0; align-items:flex-end; }
-    .strap-bottom { border-radius:0 0 24px 24px; align-items:flex-start; border-bottom:1px solid rgba(51,65,85,.6); }
+    .strap-top,.strap-bottom {
+      border-radius:0 0 72px 72px;
+      align-items:flex-start;
+      border-bottom:1px solid rgba(71,85,105,.48);
+    }
+    .strap-top {
+      border-radius:72px 72px 0 0;
+      align-items:flex-end;
+    }
+    .strap-bottom { border-radius:0 0 30px 30px; align-items:flex-start; border-bottom:1px solid rgba(51,65,85,.6); }
     .strap-gradient { width:100%; height:28px; background:linear-gradient(to bottom,transparent,rgba(0,0,0,.8)); }
     .strap-gradient-bottom { width:100%; height:28px; background:linear-gradient(to top,transparent,rgba(0,0,0,.8)); }
-    .watch-case-row { display:flex; align-items:center; justify-content:center; margin:-6px 0; z-index:10; position:relative; width:100%; }
-    .titanium-frame { width:380px; height:440px; border-radius:60px; padding:6px; background:linear-gradient(135deg,#e2e8f0 0%,#cbd5e1 25%,#94a3b8 55%,#e2e8f0 100%); box-shadow:0 30px 70px -10px rgba(0,0,0,.95),0 0 50px rgba(255,255,255,.15),inset 0 2px 2px #fff,inset 0 -2px 4px rgba(0,0,0,.7); display:flex; align-items:center; justify-content:center; position:relative; flex-shrink:0; }
-    .dial-viewport { width:100%; height:100%; border-radius:54px; background:#000; position:relative; overflow:hidden; box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.4),inset 0 15px 25px rgba(255,255,255,.15),inset 0 -10px 20px rgba(0,0,0,.8); }
+    .watch-case-row {
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      margin:-4px 0;
+      z-index:10;
+      position:relative;
+      width:100%;
+    }
+    .titanium-frame {
+      width:380px;
+      height:440px;
+      border-radius:190px;
+      padding:4px;
+      background:linear-gradient(145deg,#eef2f7 0%,#cbd5e1 22%,#8f9aaa 52%,#dfe6ee 78%,#f8fafc 100%);
+      box-shadow:
+        0 28px 65px -14px rgba(0,0,0,.95),
+        0 0 28px rgba(255,255,255,.10),
+        inset 0 1.5px 1.5px rgba(255,255,255,.85),
+        inset 0 -2px 3px rgba(0,0,0,.55);
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      position:relative;
+      flex-shrink:0;
+    }
+    .dial-viewport {
+      width:100%;
+      height:100%;
+      border-radius:186px;
+      background:#000;
+      position:relative;
+      overflow:hidden;
+      box-shadow:
+        inset 0 0 0 1px rgba(255,255,255,.28),
+        inset 0 10px 20px rgba(255,255,255,.08),
+        inset 0 -12px 22px rgba(0,0,0,.72);
+      isolation:isolate;
+      transform:translateZ(0);
+    }
     .dial-sunray { width:100%; height:100%; position:relative; overflow:hidden; }
-    .background-layer { position:absolute; inset:0; z-index:1; overflow:hidden; }
-    .bg-media-element { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; pointer-events:none; filter:brightness(.75); }
-    .glass-reflection { position:absolute; inset:0; border-radius:54px; background:linear-gradient(125deg,rgba(255,255,255,.18) 0%,rgba(255,255,255,.04) 20%,transparent 50%,rgba(255,255,255,.02) 80%,rgba(255,255,255,.04) 100%); pointer-events:none; z-index:30; }
-    .top-controls { position:absolute; top:14px; left:14px; z-index:40; display:flex; flex-direction:column; align-items:flex-start; gap:8px; }
-    .btn-menu-main { background:linear-gradient(135deg,#1e293b,#0f172a); border:1.5px solid #f472b6; color:#f472b6; font-size:16px; width:32px; height:32px; border-radius:8px; cursor:pointer; box-shadow:0 4px 12px rgba(0,0,0,.8); display:flex; align-items:center; justify-content:center; outline:none; }
-    .control-panel { position:absolute; top:40px; left:0; display:flex; flex-direction:column; align-items:stretch; gap:4px; width:115px; padding:6px; border:1.5px solid rgba(244,114,182,.4); border-radius:8px; background:rgba(15,23,42,.98); box-shadow:0 8px 24px rgba(0,0,0,.9); backdrop-filter:blur(12px); z-index:50; }
+    .background-layer {
+      position:absolute; inset:0; z-index:1; overflow:hidden; background:#000; isolation:isolate;
+    }
+    .bg-media-element {
+      position:absolute; inset:0; width:100%; height:100%; object-fit:cover; pointer-events:none;
+      filter:brightness(.75); opacity:0; transform:scale(1.02);
+      transition:opacity 1.2s ease, transform 1.2s ease;
+      will-change:opacity,transform; backface-visibility:hidden; -webkit-backface-visibility:hidden;
+    }
+    .bg-media-element.is-active { opacity:1; transform:scale(1); }
+    .bg-media-element.is-leaving { opacity:0; transform:scale(1.01); }
+    .glass-reflection {
+      position:absolute;
+      inset:0;
+      border-radius:186px;
+      background:
+        linear-gradient(125deg,rgba(255,255,255,.12) 0%,rgba(255,255,255,.025) 24%,transparent 52%,rgba(255,255,255,.015) 82%,rgba(255,255,255,.035) 100%);
+      pointer-events:none;
+      z-index:30;
+    }
+    .top-controls {
+      position:absolute;
+      top:2.5px;
+      left:38px;
+      z-index:40;
+      display:block;
+      width:auto;
+      height:auto;
+    }
+    .btn-menu-main {
+      position:absolute;
+      top:0;
+      left:0;
+      z-index:60;
+      background:var(--ui-bg);
+      border:1.5px solid var(--ui-border-strong);
+      color:var(--ui-text);
+      font-size:16px;
+      width:38px;
+      height:38px;
+      padding:0;
+      margin:0;
+      border-radius:2px;
+      cursor:pointer;
+      box-shadow:0 4px 12px var(--ui-shadow);
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      outline:none;
+      line-height:1;
+    }
+    .btn-menu-main:hover,
+    .btn-menu-main.opened {
+      border-color:var(--ui-accent);
+      color:var(--ui-accent);
+      background:rgba(8,18,28,.96);
+    }
+    .btn-menu-main.opened {
+      border-right:0;
+      border-radius:2px 0 0 2px;
+    }
+
+    .control-panel {
+      position:absolute;
+      top:0;
+      left:37px;
+      display:flex;
+      flex-direction:column;
+      align-items:stretch;
+      gap:4px;
+      width:114px;
+      padding:6px;
+      margin:0;
+      border:1.5px solid var(--ui-border-strong);
+      border-left:0;
+      border-radius:0 2px 2px 0;
+      background:var(--ui-bg);
+      box-shadow:0 6px 18px var(--ui-shadow);
+      backdrop-filter:blur(12px);
+      z-index:50;
+    }
     .control-panel[hidden] { display:none; }
-    .btn-custom { background:rgba(30,41,59,.95); border:1px solid rgba(148,163,184,.5); color:#e2e8f0; font-size:11.5px; font-weight:600; padding:6px; border-radius:5px; cursor:pointer; box-shadow:0 2px 6px rgba(0,0,0,.6); text-align:center; width:100%; outline:none; white-space:nowrap; }
-    .btn-custom:hover { border-color:#f472b6; color:#f472b6; }
+    .btn-custom {
+      background:var(--ui-bg-soft); border:1px solid var(--ui-border);
+      color:var(--ui-text); font-size:11.5px; font-weight:650;
+      padding:6px 7px; border-radius:3px; cursor:pointer;
+      box-shadow:0 2px 6px rgba(0,0,0,.45); text-align:center;
+      width:100%; outline:none; white-space:nowrap;
+    }
+    .btn-custom:hover {
+      border-color:var(--ui-accent); color:var(--ui-accent);
+      background:var(--ui-accent-soft);
+    }
     .btn-action-record.recording { background:rgba(239,68,68,.85)!important; border-color:#ef4444!important; color:#fff!important; animation:pulseRecord 1s infinite; }
     @keyframes pulseRecord { 0%{opacity:1} 50%{opacity:.5} 100%{opacity:1} }
-    .chime-select,.style-select { background:rgba(30,41,59,.95); border:1px solid rgba(148,163,184,.5); color:#e2e8f0; font-size:11px; font-weight:600; border-radius:5px; padding:5px 4px; outline:none; cursor:pointer; width:100%; }
-    .chime-select { border:1.5px solid #f472b6; color:#fbcfe8; font-size:11.5px; font-weight:700; text-align:center; }
+    .chime-select,.style-select {
+      background:var(--ui-bg-soft); border:1px solid var(--ui-border);
+      color:var(--ui-text); font-size:11px; font-weight:600;
+      border-radius:3px; padding:5px 4px; outline:none; cursor:pointer; width:100%;
+    }
+    .chime-select {
+      background:var(--ui-bg-soft); border:1px solid var(--ui-border);
+      color:var(--ui-text); font-size:11.5px; font-weight:700;
+      border-radius:3px; padding:5px 4px; outline:none; cursor:pointer;
+      width:100%; text-align:center;
+    }
     .style-color-picker { -webkit-appearance:none; appearance:none; width:100%; height:26px; border:1.5px solid rgba(255,255,255,.6); border-radius:5px; cursor:pointer; background:none; padding:0; }
     .style-color-picker::-webkit-color-swatch-wrapper { padding:0; }
     .style-color-picker::-webkit-color-swatch { border:none; border-radius:3px; }
-    .watch-toast { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); background:rgba(15,23,42,.98); border:1.5px solid #f472b6; color:#f8fafc; font-size:13px; font-weight:700; padding:10px 20px; border-radius:12px; box-shadow:0 8px 24px rgba(0,0,0,.9); z-index:100; opacity:0; pointer-events:none; transition:opacity .3s ease; white-space:nowrap; }
-    .calendar-window { position:absolute; top:24px; left:50%; transform:translateX(-50%); background:radial-gradient(circle at 50% 0%,#3a0d24,#14040d); border:1.5px solid #f472b6; padding:5px 16px; display:flex; align-items:center; gap:10px; box-shadow:inset 0 2px 8px rgba(0,0,0,.9),0 0 16px rgba(244,114,182,.4),0 6px 16px rgba(0,0,0,.8); z-index:10; }
-    .cal-year-month { font-size:13px; font-weight:800; color:#fbcfe8; letter-spacing:1.2px; }
-    .cal-divider { width:1.5px; height:16px; background:rgba(244,114,182,.6); }
+    .watch-toast {
+      position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+      background:rgba(10,14,22,.97); border:1.5px solid var(--ui-accent);
+      color:var(--ui-text); font-size:13px; font-weight:700;
+      padding:10px 20px; border-radius:6px; box-shadow:0 8px 24px rgba(0,0,0,.85);
+      z-index:100; opacity:0; pointer-events:none; transition:opacity .3s ease; white-space:nowrap;
+    }
+    .calendar-window {
+      position:absolute; top:2.5px; left:46%; transform:translateX(-50%);
+      background:rgba(10,14,22,.88); border:1.5px solid var(--ui-border-strong);
+      padding:5px 16px; display:flex; align-items:center; gap:10px;
+      font-family:'Inter',sans-serif;
+      box-shadow:inset 0 2px 8px rgba(0,0,0,.7),0 0 14px rgba(125,211,252,.12),0 6px 16px rgba(0,0,0,.6);
+      z-index:10; border-radius:2px;
+    }
+    .cal-year-month { font-size:13px; font-weight:800; color:var(--ui-text); letter-spacing:1.2px; }
+    .cal-divider { width:1.5px; height:16px; background:var(--ui-border); }
     .cal-day-date { display:flex; align-items:center; gap:6px; }
-    .cal-day-text { font-size:14px; font-weight:900; color:#f472b6; }
+    .cal-day-text { font-size:14px; font-weight:900; color:var(--ui-accent); }
     .cal-date-num { font-size:17px; font-weight:900; color:#fff; }
     .dial-input-container { position:absolute; bottom:16px; left:50%; transform:translateX(-50%); width:90%; max-width:360px; display:flex; flex-direction:column; align-items:center; gap:4px; z-index:35; }
     .dial-textarea { width:100%; height:105px; background:transparent!important; border:none!important; outline:none!important; font-family:'Noto Sans KR',sans-serif; font-size:12.5px; font-weight:600; line-height:1.45; color:#fbcfe8; text-align:center; resize:none; overflow:hidden!important; text-shadow:0 2px 8px rgba(0,0,0,.95); user-select:text; -webkit-user-select:text; }
-    .hand-pivot-container { position:absolute; top:50%; left:50%; width:0; height:0; pointer-events:none; z-index:20; }
-    .hand-hour-wrapper { position:absolute; bottom:0; left:0; width:0; height:60px; transform-origin:bottom center; z-index:20; }
-    .hour-gold-tip-wrap { position:absolute; top:0; left:50%; transform:translate(-50%,-50%); width:34px; height:34px; display:flex; align-items:center; justify-content:center; }
-    .hour-gold-tip { position:absolute; width:100%; height:100%; object-fit:contain; mix-blend-mode:screen; filter:drop-shadow(0 0 4px #fef08a); }
-    .hand-minute-wrapper { position:absolute; bottom:0; left:0; width:0; height:90px; transform-origin:bottom center; z-index:21; }
-    .minute-gold-tip-wrap { position:absolute; top:0; left:50%; transform:translate(-50%,-50%); width:38px; height:38px; display:flex; align-items:center; justify-content:center; }
-    .minute-gold-tip { position:absolute; width:100%; height:100%; object-fit:contain; mix-blend-mode:screen; filter:drop-shadow(0 0 5px #fef08a); }
+    .hand-pivot-container {
+      position:absolute; top:50%; left:50%; width:0; height:0; pointer-events:none; z-index:25;
+      transform:translateZ(0);
+      backface-visibility:hidden; -webkit-backface-visibility:hidden;
+    }
+    .hand-hour-wrapper {
+      position:absolute; bottom:0; left:0; width:0; height:60px; transform-origin:bottom center; z-index:20;
+      will-change:transform; backface-visibility:hidden; -webkit-backface-visibility:hidden;
+      overflow:visible;
+    
+      transform-style:preserve-3d;}
+    .hour-gold-tip-wrap {
+      position:absolute; top:0; left:50%; transform:translate(-50%,-50%); width:34px; height:34px;
+      display:flex; align-items:center; justify-content:center; pointer-events:none;
+      backface-visibility:hidden; -webkit-backface-visibility:hidden;
+    }
+    .hour-gold-tip {
+      position:absolute; width:100%; height:100%; object-fit:contain; z-index:2; pointer-events:none;
+      filter:drop-shadow(0 0 4px rgba(254,240,138,.95));
+      backface-visibility:hidden; -webkit-backface-visibility:hidden;
+    
+      transform:translateZ(0);}
+    .hand-minute-wrapper {
+      position:absolute; bottom:0; left:0; width:0; height:90px; transform-origin:bottom center; z-index:21;
+      will-change:transform; backface-visibility:hidden; -webkit-backface-visibility:hidden;
+      overflow:visible;
+    
+      transform-style:preserve-3d;}
+    .minute-gold-tip-wrap {
+      position:absolute; top:0; left:50%; transform:translate(-50%,-50%); width:38px; height:38px;
+      display:flex; align-items:center; justify-content:center; pointer-events:none;
+      backface-visibility:hidden; -webkit-backface-visibility:hidden;
+    }
+    .minute-gold-tip {
+      position:absolute; width:100%; height:100%; object-fit:contain; z-index:2; pointer-events:none;
+      filter:drop-shadow(0 0 5px rgba(254,240,138,.95));
+      backface-visibility:hidden; -webkit-backface-visibility:hidden;
+    
+      transform:translateZ(0);}
     .hand-time-text { position:relative; z-index:6; font-family:'Inter',sans-serif; font-weight:900; color:#fff; text-shadow:0 0 4px #000,0 0 14px #f59e0b; line-height:1; text-align:center; }
     .hour-text { font-size:12px; }
     .minute-text { display:block; font-size:10px; }
-    .hand-second-floating { position:absolute; bottom:0; left:0; width:0; height:110px; transform-origin:bottom center; z-index:25; }
-    .second-meteorite-wrap { position:absolute; top:0; left:50%; transform:translate(-50%,-50%); width:65px; height:65px; display:flex; align-items:center; justify-content:center; transform-origin:center; }
-    .second-meteorite { position:absolute; width:100%; height:100%; object-fit:contain; mix-blend-mode:screen; z-index:2; filter:drop-shadow(0 0 6px #fef08a); }
+    .hand-second-floating {
+      position:absolute; bottom:0; left:0; width:0; height:110px; transform-origin:bottom center; z-index:28;
+      will-change:transform; backface-visibility:hidden; -webkit-backface-visibility:hidden;
+      overflow:visible;
+    
+      transform-style:preserve-3d;}
+    .second-meteorite-wrap {
+      position:absolute; top:0; left:50%; transform:translate(-50%,-50%); width:65px; height:65px;
+      display:flex; align-items:center; justify-content:center; transform-origin:center;
+      backface-visibility:hidden; -webkit-backface-visibility:hidden; will-change:transform;
+    }
+    .second-meteorite {
+      position:absolute; width:100%; height:100%; object-fit:contain; z-index:2; pointer-events:none;
+      filter:drop-shadow(0 0 6px rgba(254,240,138,.98));
+      backface-visibility:hidden; -webkit-backface-visibility:hidden;
+    
+      transform:translateZ(0);}
     @media (max-width:600px){
       .scaler{width:100vw!important;height:100dvh!important;transform:none!important}
       .watch-container{width:100vw!important;height:100dvh!important;justify-content:center}
       .strap-top,.strap-bottom{display:none!important}
       .watch-case-row{width:100vw!important;height:100dvh!important;margin:0!important}
-      .titanium-frame{width:100vw!important;height:100dvh!important;border-radius:0!important;padding:0!important;border:none!important}
-      .dial-viewport{border-radius:0!important;box-shadow:none!important}
-      .glass-reflection{border-radius:0!important}
-      .top-controls{top:16px;left:16px}
+      .titanium-frame{width:calc(100vw - 8px)!important;height:calc(100dvh - 8px)!important;border-radius:min(47vw,190px)!important;padding:3px!important;border:none!important}
+      .dial-viewport{border-radius:min(46vw,186px)!important;box-shadow:none!important}
+      .glass-reflection{border-radius:min(46vw,186px)!important}
+      .top-controls{top:14px;left:14px}
       .dial-input-container{bottom:20px;width:92%}
       .dial-textarea{height:120px;font-size:13px}
     }
-  </style>
+  
+    .titanium-frame::after {
+      content:"";
+      position:absolute;
+      inset:3px;
+      border-radius:187px;
+      border:1px solid rgba(255,255,255,.18);
+      pointer-events:none;
+      z-index:2;
+    }
+</style>
 </head>
 <body>
   <div class="viewport-wrapper" id="viewportWrapper">
@@ -317,38 +558,50 @@
 
               <div class="dial-sunray" id="dialSunray">
                 <div id="backgroundLayer" class="background-layer">
-                  <video id="defaultBackground" src="./assets/spring.mp4" class="bg-media-element" autoplay loop muted playsinline></video>
+                  <video id="defaultBackground" src="./assets/spring.mp4" class="bg-media-element is-active" autoplay loop muted playsinline preload="auto"></video>
                 </div>
 
                 <div class="top-controls">
-                  <button type="button" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정">⚙️</button>
+                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정">⚙️</button>
 
-                  <div id="mainMenuPanel" class="control-panel" hidden>
+                  <div id="mainMenuPanel" class="control-panel" style="left:37px;top:0" hidden>
                     <button type="button" class="btn-custom" onclick="toggleSubPanel('backgroundPanel', event)">배경</button>
                     <button type="button" class="btn-custom" onclick="toggleSubPanel('soundPanel', event)">소리</button>
                     <button type="button" class="btn-custom" onclick="toggleSubPanel('letterPanel', event)">편지</button>
                     <button type="button" class="btn-custom" onclick="toggleSubPanel('saveSharePanel', event)">저장</button>
                   </div>
 
-                  <div id="backgroundPanel" class="control-panel" style="left:115px;top:40px" hidden>
+                  <div id="backgroundPanel" class="control-panel" style="left:150px;top:0" hidden>
                     <label for="filePhotoUpload" class="btn-custom">이미지</label>
-                    <input type="file" id="filePhotoUpload" accept="image/*" style="display:none">
+                    <input type="file" id="filePhotoUpload" accept="image/*" multiple style="display:none">
                     <label for="fileVideoUpload" class="btn-custom">영상</label>
-                    <input type="file" id="fileVideoUpload" accept="video/*" style="display:none">
-                    <label for="fileMeteoriteUpload" class="btn-custom">초침</label>
+                    <input type="file" id="fileVideoUpload" accept="video/*" multiple style="display:none">
+                    <label for="fileMeteoriteUpload" class="btn-custom">시·분·초침</label>
                     <input type="file" id="fileMeteoriteUpload" accept="image/*" style="display:none">
+                    <select id="backgroundIntervalSelect" class="style-select" title="배경 자동 전환 간격">
+                      <option value="10">자동 10초</option>
+                      <option value="15" selected>자동 15초</option>
+                      <option value="30">자동 30초</option>
+                      <option value="60">자동 60초</option>
+                    </select>
+                    <select id="backgroundTransitionSelect" class="style-select" title="배경 전환 방식">
+                      <option value="soft" selected>부드럽게</option>
+                      <option value="direct">바로 전환</option>
+                    </select>
+                    <button type="button" class="btn-custom" onclick="toggleBackgroundRotation()">⏯ 자동전환</button>
                   </div>
 
-                  <div id="soundPanel" class="control-panel" style="left:115px;top:70px" hidden>
+                  <div id="soundPanel" class="control-panel" style="left:150px;top:38px" hidden>
                     <button type="button" id="recordBtn" class="btn-custom btn-action-record" onclick="toggleRecording()">🎙 녹음</button>
                     <button type="button" id="playAudioBtn" class="btn-custom" onclick="playRecordedAudio()" style="display:none;background:rgba(236,72,153,.9);color:#fff;font-weight:800">▶ 재생음</button>
                     <select id="chimeSelect" class="chime-select" title="정시알림음 선택">
                       <option value="rooster" selected>🐓 닭소리</option>
                       <option value="recorded">🎙 녹음소리</option>
                     </select>
+                    <button type="button" class="btn-custom" onclick="testRoosterChime()">🐓 닭소리 테스트</button>
                   </div>
 
-                  <div id="letterPanel" class="control-panel" style="left:115px;top:100px" hidden>
+                  <div id="letterPanel" class="control-panel" style="left:150px;top:76px" hidden>
                     <select id="fontFamilySelect" class="style-select" title="글씨체">
                       <option value="'Noto Serif KR', serif">명조</option>
                       <option value="'Noto Sans KR', sans-serif" selected>고딕</option>
@@ -362,15 +615,16 @@
                     </select>
                     <input type="color" id="textColorPicker" class="style-color-picker" value="#fbcfe8" title="글자 색상">
                     <select id="narratorSelect" class="style-select" title="내레이터">
-                      <option value="male">😊 남자 · 따뜻하게</option>
-                      <option value="female" selected>😊 여자 · 밝게</option>
+                      <option value="male">😊 남자 · 미소톤</option>
+                      <option value="female" selected>😊 여자 · 미소톤</option>
                     </select>
-                    <button type="button" class="btn-custom" onclick="playNarration()">▶ AI 미소 내레이터</button>
+                    <button type="button" class="btn-custom" onclick="playNarration()">▶ 😊 웃는 AI 내레이터</button>
+                    <button type="button" class="btn-custom" onclick="regenerateNarration()">↻ 미소 음성 다시 생성</button>
                     <button type="button" class="btn-custom" onclick="stopNarration()">■ 정지</button>
-                    <div style="font-size:9px;line-height:1.25;color:#fbcfe8;text-align:center;padding:2px 1px;">AI로 생성된 음성입니다</div>
+                    <div style="font-size:9px;line-height:1.25;color:#fbcfe8;text-align:center;padding:2px 1px;">AI 합성 음성 · 미소 짓는 듯한 따뜻한 톤</div>
                   </div>
 
-                  <div id="saveSharePanel" class="control-panel" style="left:115px;top:130px" hidden>
+                  <div id="saveSharePanel" class="control-panel" style="left:150px;top:114px" hidden>
                     <button type="button" class="btn-custom" onclick="saveCurrentStateLocally()">저장</button>
                     <button type="button" class="btn-custom" onclick="window.saveToFirestoreAndShare()">카톡링크</button>
                   </div>
@@ -414,17 +668,111 @@
     const DEFAULT_GOLD_BASE64 = "data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3CradialGradient id='goldGlow' cx='35%25' cy='30%25' r='65%25'%3E%3Cstop offset='0%25' stop-color='%23ffffff'/%3E%3Cstop offset='25%25' stop-color='%23fef08a'/%3E%3Cstop offset='55%25' stop-color='%23eab308'/%3E%3Cstop offset='85%25' stop-color='%23a16207'/%3E%3Cstop offset='100%25' stop-color='%23451a03'/%3E%3C/radialGradient%3E%3C/defs%3E%3Cpath d='M45,12 C62,9 78,22 84,38 C89,52 82,68 76,80 C68,91 48,93 35,88 C20,82 12,68 14,52 C15,36 28,16 45,12 Z' fill='url(%23goldGlow)'/%3E%3C/svg%3E";
     document.querySelectorAll('.gold-sync-target').forEach(img=>img.src=DEFAULT_GOLD_BASE64);
 
-    window.applyBackground = function(source,type='image'){
-      const layer = document.getElementById('backgroundLayer');
-      layer.innerHTML='';
+    window.__bgCurrent = document.getElementById('defaultBackground');
+
+    function createBackgroundElement(source,type='image'){
+      let el;
       if(type==='video'){
-        const v=document.createElement('video');
-        v.src=source; v.className='bg-media-element'; v.autoplay=true; v.loop=true; v.muted=true; v.playsInline=true;
-        layer.appendChild(v); v.play().catch(()=>{});
-      } else {
-        const img=document.createElement('img'); img.src=source; img.className='bg-media-element'; layer.appendChild(img);
+        el=document.createElement('video');
+        el.autoplay=true; el.loop=true; el.muted=true; el.playsInline=true; el.preload='auto';
+      }else{
+        el=document.createElement('img');
+        el.decoding='async';
       }
+      el.className='bg-media-element';
+      el.src=source;
+      return el;
+    }
+
+    async function waitBackgroundReady(el,type){
+      try{
+        if(type==='video'){
+          await new Promise(resolve=>{
+            if(el.readyState>=2) return resolve();
+            const done=()=>resolve();
+            el.addEventListener('loadeddata',done,{once:true});
+            setTimeout(done,2000);
+          });
+          await el.play().catch(()=>{});
+        }else if(el.decode){
+          await el.decode().catch(()=>{});
+        }
+      }catch(_){}
+    }
+
+    window.applyBackground = async function(source,type='image',instant=false){
+      const layer=document.getElementById('backgroundLayer');
+      const mode=document.getElementById('backgroundTransitionSelect')?.value||'soft';
+      if(mode==='direct') instant=true;
+
+      const oldEl=window.__bgCurrent;
+      const newEl=createBackgroundElement(source,type);
+      layer.appendChild(newEl);
+      await waitBackgroundReady(newEl,type);
+
+      if(instant || !oldEl){
+        newEl.style.transition='none';
+        newEl.classList.add('is-active');
+        requestAnimationFrame(()=>newEl.style.transition='');
+        if(oldEl && oldEl!==newEl){
+          try{oldEl.pause?.();}catch(_){}
+          oldEl.remove();
+        }
+      }else{
+        newEl.getBoundingClientRect();
+        requestAnimationFrame(()=>{
+          newEl.classList.add('is-active');
+          oldEl.classList.remove('is-active');
+          oldEl.classList.add('is-leaving');
+          setTimeout(()=>{
+            try{oldEl.pause?.();}catch(_){}
+            if(oldEl.parentNode===layer) oldEl.remove();
+          },1350);
+        });
+      }
+      window.__bgCurrent=newEl;
     };
+
+    function clearBackgroundRotationTimer(){
+      if(window.backgroundRotationTimer){
+        clearInterval(window.backgroundRotationTimer);
+        window.backgroundRotationTimer=null;
+      }
+    }
+
+    async function showBackgroundAt(index,instant=false){
+      const list=window.backgroundPlaylist||[];
+      if(!list.length)return;
+      window.backgroundRotationIndex=((index%list.length)+list.length)%list.length;
+      const item=list[window.backgroundRotationIndex];
+      await window.applyBackground(item.url,item.type||'image',instant);
+    }
+
+    function startBackgroundRotation(){
+      clearBackgroundRotationTimer();
+      const list=window.backgroundPlaylist||[];
+      if(list.length<2)return;
+      const sec=Number(document.getElementById('backgroundIntervalSelect')?.value||window.backgroundRotationSeconds||15);
+      window.backgroundRotationSeconds=Math.max(5,sec);
+      window.backgroundRotationTimer=setInterval(()=>{
+        showBackgroundAt((window.backgroundRotationIndex||0)+1,false);
+      },window.backgroundRotationSeconds*1000);
+    }
+
+    function toggleBackgroundRotation(){
+      if(window.backgroundRotationTimer){
+        clearBackgroundRotationTimer();
+        window.showToast('⏸ 배경 자동전환 정지');
+      }else{
+        if((window.backgroundPlaylist||[]).length<2){
+          window.showToast('이미지/영상을 2개 이상 선택하세요');
+          return;
+        }
+        startBackgroundRotation();
+        window.showToast(`▶ ${window.backgroundRotationSeconds}초 · 부드러운 전환`);
+      }
+    }
+    window.toggleBackgroundRotation=toggleBackgroundRotation;
 
     window.applyWatchData = function(data){
       const input=document.getElementById('dialContentInput');
@@ -448,13 +796,29 @@
       playBtn.textContent='▶ 재생음';
 
       window.customBackgroundBlob=null;
+      window.backgroundPlaylistBlobs=[];
       window.remoteBackgroundUrl=data.backgroundUrl||'';
       window.remoteBackgroundType=data.backgroundType||'';
-      if(window.remoteBackgroundUrl) window.applyBackground(window.remoteBackgroundUrl,window.remoteBackgroundType||'image');
+      window.backgroundPlaylist = Array.isArray(data.backgroundPlaylist) && data.backgroundPlaylist.length
+        ? data.backgroundPlaylist.map(x=>({url:x.url,type:x.type||'image'}))
+        : (window.remoteBackgroundUrl ? [{url:window.remoteBackgroundUrl,type:window.remoteBackgroundType||'image'}] : []);
+      window.backgroundRotationSeconds=Number(data.backgroundRotationSeconds||15);
+      const intervalSel=document.getElementById('backgroundIntervalSelect');
+      if(intervalSel) intervalSel.value=String(window.backgroundRotationSeconds);
+      if(window.backgroundPlaylist.length){
+        window.backgroundRotationIndex=0;
+        showBackgroundAt(0,true);
+        startBackgroundRotation();
+      }
 
       window.customMeteorBlob=null;
       window.remoteMeteorUrl=data.meteorUrl||'';
-      if(window.remoteMeteorUrl) document.getElementById('secGoldImg').src=window.remoteMeteorUrl;
+      if(window.remoteMeteorUrl){
+        ['hourGoldImg','minGoldImg','secGoldImg'].forEach(id=>{
+          const el=document.getElementById(id);
+          if(el) el.src=window.remoteMeteorUrl;
+        });
+      }
     };
 
     // ---------- IndexedDB ----------
@@ -501,67 +865,294 @@
         }
         const audio=await dbGet('audio'); if(audio){window.recordedAudioBlob=audio; const b=document.getElementById('playAudioBtn'); b.style.display='block'; b.textContent='▶ 재생음';}
         const bg=await dbGet('background'); if(bg?.blob){window.customBackgroundBlob=bg.blob;window.customBackgroundType=bg.type;window.applyBackground(URL.createObjectURL(bg.blob),bg.type);}
-        const meteor=await dbGet('meteor'); if(meteor){window.customMeteorBlob=meteor;document.getElementById('secGoldImg').src=URL.createObjectURL(meteor);}
+        const meteor=await dbGet('meteor');
+        if(meteor){
+          window.customMeteorBlob=meteor;
+          const handUrl=URL.createObjectURL(meteor);
+          ['hourGoldImg','minGoldImg','secGoldImg'].forEach(id=>{
+            const el=document.getElementById(id);
+            if(el) el.src=handUrl;
+          });
+        }
         if(raw||audio||bg||meteor) window.showToast('💾 저장 상태 복원 완료');
       }catch(err){console.error('restore error',err);}
     };
 
     document.getElementById('filePhotoUpload').addEventListener('change',e=>{
-      const f=e.target.files[0]; if(!f)return;
-      window.customBackgroundBlob=f; window.customBackgroundType='image'; window.remoteBackgroundUrl=''; window.remoteBackgroundType='';
-      window.applyBackground(URL.createObjectURL(f),'image'); window.showToast('🖼️ 배경 이미지 적용');
+      const files=[...e.target.files];
+      if(!files.length)return;
+      const items=files.map(f=>({blob:f,type:'image',url:URL.createObjectURL(f)}));
+      window.backgroundPlaylistBlobs=[...(window.backgroundPlaylistBlobs||[]),...items.map(x=>({blob:x.blob,type:x.type}))];
+      window.backgroundPlaylist=[...(window.backgroundPlaylist||[]),...items.map(x=>({url:x.url,type:x.type}))];
+      window.customBackgroundBlob=files[0];
+      window.customBackgroundType='image';
+      window.remoteBackgroundUrl=''; window.remoteBackgroundType='';
+      window.backgroundRotationIndex=0;
+      showBackgroundAt(0,true); startBackgroundRotation();
+      window.showToast(`🖼️ 이미지 ${files.length}개 추가 · 자동전환 시작`);
+      e.target.value='';
     });
     document.getElementById('fileVideoUpload').addEventListener('change',e=>{
-      const f=e.target.files[0]; if(!f)return;
-      window.customBackgroundBlob=f; window.customBackgroundType='video'; window.remoteBackgroundUrl=''; window.remoteBackgroundType='';
-      window.applyBackground(URL.createObjectURL(f),'video'); window.showToast('🎬 배경 영상 적용');
+      const files=[...e.target.files];
+      if(!files.length)return;
+      const items=files.map(f=>({blob:f,type:'video',url:URL.createObjectURL(f)}));
+      window.backgroundPlaylistBlobs=[...(window.backgroundPlaylistBlobs||[]),...items.map(x=>({blob:x.blob,type:x.type}))];
+      window.backgroundPlaylist=[...(window.backgroundPlaylist||[]),...items.map(x=>({url:x.url,type:x.type}))];
+      window.customBackgroundBlob=files[0];
+      window.customBackgroundType='video';
+      window.remoteBackgroundUrl=''; window.remoteBackgroundType='';
+      showBackgroundAt(window.backgroundRotationIndex||0,true); startBackgroundRotation();
+      window.showToast(`🎬 영상 ${files.length}개 추가 · 자동전환 시작`);
+      e.target.value='';
     });
     document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
-      const f=e.target.files[0]; if(!f)return;
-      window.customMeteorBlob=f; window.remoteMeteorUrl=''; document.getElementById('secGoldImg').src=URL.createObjectURL(f); window.showToast('✨ 초침 이미지 적용');
+      const f=e.target.files[0];
+      if(!f)return;
+      window.customMeteorBlob=f;
+      window.remoteMeteorUrl='';
+      const handUrl=URL.createObjectURL(f);
+      ['hourGoldImg','minGoldImg','secGoldImg'].forEach(id=>{
+        const el=document.getElementById(id);
+        if(el) el.src=handUrl;
+      });
+      window.showToast('🕰️ 시·분·초침 이미지 적용');
     });
 
-    // ---------- 녹음 ----------
-    let mediaRecorder=null,audioChunks=[];
-    async function toggleRecording(){
-      if(!mediaRecorder||mediaRecorder.state==='inactive'){
-        try{
-          const stream=await navigator.mediaDevices.getUserMedia({audio:true});
-          audioChunks=[]; let options={};
-          if(window.MediaRecorder?.isTypeSupported?.('audio/webm;codecs=opus')) options.mimeType='audio/webm;codecs=opus';
-          mediaRecorder=new MediaRecorder(stream,options);
-          mediaRecorder.ondataavailable=e=>{if(e.data.size>0)audioChunks.push(e.data);};
-          mediaRecorder.onstop=()=>{
-            const mime=mediaRecorder.mimeType||'audio/webm';
-            window.recordedAudioBlob=new Blob(audioChunks,{type:mime});
-            window.remoteAudioUrl=''; // 새 녹음이 이전 원격 음성을 대체
-            const b=document.getElementById('playAudioBtn'); b.style.display='block'; b.textContent='▶ 재생음';
-            window.showToast('🎤 녹음 완료 — 저장 또는 공유하세요');
-          };
-          mediaRecorder.start();
-          document.getElementById('recordBtn').classList.add('recording');
-          document.getElementById('recordBtn').textContent='■ 중지';
-          window.showToast('🔴 녹음 중...');
-        }catch(err){console.error(err);window.showToast('❌ 마이크 권한을 확인하세요');}
-      }else if(mediaRecorder.state==='recording'){
-        mediaRecorder.stop();
-        document.getElementById('recordBtn').classList.remove('recording');
-        document.getElementById('recordBtn').textContent='🎙 녹음';
-        mediaRecorder.stream.getTracks().forEach(t=>t.stop());
+    // ---------- 녹음 v1.7 : HQ Voice ----------
+    // 목표: 모바일/PC 공통으로 또렷한 음성 편지 녹음
+    // - echoCancellation / noiseSuppression / autoGainControl
+    // - Opus 128kbps 우선, Safari 계열은 지원 MIME 자동 선택
+    // - 80Hz 하이패스 + 가벼운 compressor + 소폭 gain
+    let mediaRecorder = null;
+    let audioChunks = [];
+    let recordingSourceStream = null;
+    let recordingAudioContext = null;
+    let recordingProcessedStream = null;
+
+    function getBestRecordingOptions() {
+      const candidates = [
+        'audio/webm;codecs=opus',
+        'audio/ogg;codecs=opus',
+        'audio/mp4'
+      ];
+
+      for (const mimeType of candidates) {
+        try {
+          if (window.MediaRecorder?.isTypeSupported?.(mimeType)) {
+            return { mimeType, audioBitsPerSecond: 128000 };
+          }
+        } catch (_) {}
+      }
+
+      return { audioBitsPerSecond: 128000 };
+    }
+
+    async function buildVoiceProcessedStream(rawStream) {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return rawStream;
+
+      try {
+        const ctx = new AudioCtx();
+        if (ctx.state === 'suspended') await ctx.resume();
+
+        const source = ctx.createMediaStreamSource(rawStream);
+
+        // 저주파 진동/책상 충격/에어컨 럼블 감소
+        const highPass = ctx.createBiquadFilter();
+        highPass.type = 'highpass';
+        highPass.frequency.value = 80;
+        highPass.Q.value = 0.7;
+
+        // 작은 목소리와 큰 목소리의 차이를 부드럽게 정리
+        const compressor = ctx.createDynamicsCompressor();
+        compressor.threshold.value = -24;
+        compressor.knee.value = 24;
+        compressor.ratio.value = 3;
+        compressor.attack.value = 0.01;
+        compressor.release.value = 0.22;
+
+        // 과도하지 않은 음량 보정
+        const gain = ctx.createGain();
+        gain.gain.value = 1.12;
+
+        const dest = ctx.createMediaStreamDestination();
+
+        source.connect(highPass);
+        highPass.connect(compressor);
+        compressor.connect(gain);
+        gain.connect(dest);
+
+        recordingAudioContext = ctx;
+        recordingProcessedStream = dest.stream;
+
+        return dest.stream;
+      } catch (err) {
+        console.warn('Voice processing fallback:', err);
+        return rawStream;
       }
     }
 
-    let currentAudio=null,currentObjectUrl=null;
-    function playRecordedAudio(){
-      let src='';
-      if(window.recordedAudioBlob){
-        if(currentObjectUrl) URL.revokeObjectURL(currentObjectUrl);
-        currentObjectUrl=URL.createObjectURL(window.recordedAudioBlob); src=currentObjectUrl;
-      }else if(window.remoteAudioUrl){ src=window.remoteAudioUrl; }
-      if(!src){window.showToast('재생할 음성이 없습니다');return;}
-      if(currentAudio) currentAudio.pause();
-      currentAudio=new Audio(src);
-      currentAudio.play().then(()=>window.showToast('▶ 음성 편지 재생 중')).catch(()=>window.showToast('화면을 터치한 후 다시 재생하세요'));
+    async function toggleRecording() {
+      if (!mediaRecorder || mediaRecorder.state === 'inactive') {
+        try {
+          if (!navigator.mediaDevices?.getUserMedia) {
+            window.showToast('❌ 이 브라우저는 마이크 녹음을 지원하지 않습니다');
+            return;
+          }
+
+          recordingSourceStream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true,
+              channelCount: 1,
+              sampleRate: { ideal: 48000 },
+              sampleSize: { ideal: 16 }
+            }
+          });
+
+          const recordStream = await buildVoiceProcessedStream(recordingSourceStream);
+          audioChunks = [];
+
+          const options = getBestRecordingOptions();
+
+          try {
+            mediaRecorder = new MediaRecorder(recordStream, options);
+          } catch (_) {
+            // 일부 Safari/모바일에서 bitrate 옵션 조합이 실패할 경우 기본값으로 재시도
+            mediaRecorder = new MediaRecorder(recordStream);
+          }
+
+          mediaRecorder.ondataavailable = (e) => {
+            if (e.data && e.data.size > 0) audioChunks.push(e.data);
+          };
+
+          mediaRecorder.onerror = (e) => {
+            console.error('MediaRecorder error:', e);
+            window.showToast('❌ 녹음 중 오류가 발생했습니다');
+          };
+
+          mediaRecorder.onstop = async () => {
+            const mime =
+              mediaRecorder?.mimeType ||
+              audioChunks[0]?.type ||
+              'audio/webm';
+
+            window.recordedAudioBlob = new Blob(audioChunks, { type: mime });
+            window.remoteAudioUrl = ''; // 새 녹음이 이전 원격 음성을 대체
+
+            const b = document.getElementById('playAudioBtn');
+            b.style.display = 'block';
+            b.textContent = '▶ 재생음';
+
+            // 사용한 마이크/오디오 자원 정리
+            try {
+              recordingSourceStream?.getTracks().forEach(t => t.stop());
+              recordingProcessedStream?.getTracks().forEach(t => t.stop());
+              if (recordingAudioContext && recordingAudioContext.state !== 'closed') {
+                await recordingAudioContext.close();
+              }
+            } catch (_) {}
+
+            recordingSourceStream = null;
+            recordingProcessedStream = null;
+            recordingAudioContext = null;
+
+            window.showToast('🎤 고음질 녹음 완료 — 재생해서 확인하세요');
+          };
+
+          // 작은 timeslice로 모바일 메모리 안정성 향상
+          mediaRecorder.start(1000);
+
+          const recordBtn = document.getElementById('recordBtn');
+          recordBtn.classList.add('recording');
+          recordBtn.textContent = '■ 중지';
+
+          window.showToast('🔴 고음질 녹음 중 · 입에서 20~30cm 권장');
+        } catch (err) {
+          console.error(err);
+
+          if (err?.name === 'NotAllowedError' || err?.name === 'SecurityError') {
+            window.showToast('❌ 마이크 권한을 허용해주세요');
+          } else if (err?.name === 'NotFoundError') {
+            window.showToast('❌ 사용할 마이크를 찾지 못했습니다');
+          } else {
+            window.showToast('❌ 마이크를 시작하지 못했습니다');
+          }
+        }
+      } else if (mediaRecorder.state === 'recording') {
+        mediaRecorder.stop();
+
+        const recordBtn = document.getElementById('recordBtn');
+        recordBtn.classList.remove('recording');
+        recordBtn.textContent = '🎙 녹음';
+      }
+    }
+
+    let currentAudio = null;
+    let currentObjectUrl = null;
+    let playbackAudioContext = null;
+    let playbackSourceNode = null;
+
+    async function playRecordedAudio() {
+      let src = '';
+
+      if (window.recordedAudioBlob) {
+        if (currentObjectUrl) URL.revokeObjectURL(currentObjectUrl);
+        currentObjectUrl = URL.createObjectURL(window.recordedAudioBlob);
+        src = currentObjectUrl;
+      } else if (window.remoteAudioUrl) {
+        src = window.remoteAudioUrl;
+      }
+
+      if (!src) {
+        window.showToast('재생할 음성이 없습니다');
+        return;
+      }
+
+      try {
+        if (currentAudio) {
+          currentAudio.pause();
+          currentAudio.currentTime = 0;
+        }
+
+        currentAudio = new Audio(src);
+        currentAudio.preload = 'auto';
+
+        // 재생 시에도 약한 보정: 작은 녹음의 체감 음량 향상
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (AudioCtx) {
+          try {
+            playbackAudioContext = playbackAudioContext || new AudioCtx();
+            if (playbackAudioContext.state === 'suspended') {
+              await playbackAudioContext.resume();
+            }
+
+            playbackSourceNode = playbackAudioContext.createMediaElementSource(currentAudio);
+            const gain = playbackAudioContext.createGain();
+            gain.gain.value = 1.15;
+
+            const limiter = playbackAudioContext.createDynamicsCompressor();
+            limiter.threshold.value = -3;
+            limiter.knee.value = 0;
+            limiter.ratio.value = 12;
+            limiter.attack.value = 0.003;
+            limiter.release.value = 0.12;
+
+            playbackSourceNode.connect(gain);
+            gain.connect(limiter);
+            limiter.connect(playbackAudioContext.destination);
+          } catch (audioGraphErr) {
+            console.warn('Playback enhancement fallback:', audioGraphErr);
+          }
+        }
+
+        await currentAudio.play();
+        window.showToast('▶ 음성 편지 재생 중');
+      } catch (err) {
+        console.error(err);
+        window.showToast('화면을 터치한 후 다시 재생하세요');
+      }
     }
 
     // ---------- AI 편지 내레이터 v1.5 ----------
@@ -571,6 +1162,8 @@
     let currentNarratorAudio = null;
     let narratorRequestController = null;
     let cachedNarratorVoices = [];
+    const NARRATOR_STYLE_VERSION = 'smile-v2';
+    window.aiNarratorStyleVersion = '';
 
     function refreshNarratorVoices(){
       if(!('speechSynthesis' in window)) return [];
@@ -636,8 +1229,8 @@
       await currentNarratorAudio.play();
       window.showToast(
         gender === 'male'
-          ? '😊 따뜻한 AI 남자 목소리로 읽는 중'
-          : '😊 밝은 AI 여자 목소리로 읽는 중'
+          ? '😊 미소 짓는 AI 남자 목소리로 읽는 중'
+          : '😊 미소 짓는 AI 여자 목소리로 읽는 중'
       );
     }
 
@@ -664,8 +1257,8 @@
       narrationUtterance = new SpeechSynthesisUtterance(makeWarmNarrationText(rawText));
       narrationUtterance.lang = 'ko-KR';
       narrationUtterance.volume = 1.0;
-      narrationUtterance.rate = gender === 'male' ? 0.90 : 0.95;
-      narrationUtterance.pitch = gender === 'male' ? 0.78 : 1.10;
+      narrationUtterance.rate = gender === 'male' ? 0.92 : 0.96;
+      narrationUtterance.pitch = gender === 'male' ? 0.86 : 1.06;
 
       const voice = chooseFallbackVoice(gender);
       if(voice) narrationUtterance.voice = voice;
@@ -687,6 +1280,17 @@
       }, 80);
     }
 
+    async function regenerateNarration(){
+      try { stopNarration(); } catch(_) {}
+      window.aiNarratorBlob = null;
+      window.remoteNarratorAudioUrl = '';
+      window.aiNarratorStyleVersion = '';
+      try { await idbSet('aiNarratorAudio', null); } catch(_) {}
+      window.showToast('😊 미소 음성을 새로 만들고 있습니다...');
+      await playNarration();
+    }
+    window.regenerateNarration = regenerateNarration;
+
     async function playNarration(){
       const rawText = document.getElementById('dialContentInput').value.trim();
       if(!rawText){
@@ -697,7 +1301,7 @@
       const gender = document.getElementById('narratorSelect')?.value || 'female';
 
       // 같은 문장으로 이미 생성한 로컬 AI 음성이 있으면 API를 다시 호출하지 않는다.
-      if(window.aiNarratorBlob){
+      if(window.aiNarratorBlob && window.aiNarratorStyleVersion === NARRATOR_STYLE_VERSION){
         try {
           await playAiNarratorBlob(window.aiNarratorBlob, gender);
           return;
@@ -727,7 +1331,9 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             text: rawText,
-            gender
+            gender,
+            style: 'smiling',
+            styleVersion: NARRATOR_STYLE_VERSION
           }),
           signal: narratorRequestController.signal
         });
@@ -745,6 +1351,7 @@
         if(!blob.size) throw new Error('빈 음성 파일');
 
         window.aiNarratorBlob = new Blob([blob], { type: blob.type || 'audio/mpeg' });
+        window.aiNarratorStyleVersion = NARRATOR_STYLE_VERSION;
         window.remoteNarratorAudioUrl = '';
 
         try { await idbSet('aiNarratorAudio', window.aiNarratorBlob); } catch(_) {}
@@ -766,61 +1373,128 @@
       speechSynthesis.addEventListener?.('voiceschanged', refreshNarratorVoices);
     }
 
-    // ---------- 정시 알림음 ----------
+    // ---------- 정시 알림음 v1.8 ----------
     let lastHourlyKey = '';
-    function playRoosterChime(){
+    let chimeAudioContext = null;
+
+    async function unlockChimeAudio(){
       try{
-        const AC = window.AudioContext || window.webkitAudioContext;
-        if(!AC) throw new Error('no audio context');
-        const ctx = new AC();
-        const now = ctx.currentTime;
-        const sweeps = [
-          {t:0.00, f1:520, f2:760, d:0.22},
-          {t:0.24, f1:650, f2:980, d:0.28},
-          {t:0.56, f1:470, f2:820, d:0.36}
-        ];
-        sweeps.forEach(x=>{
-          const osc=ctx.createOscillator(), gain=ctx.createGain();
-          osc.type='sawtooth';
-          osc.frequency.setValueAtTime(x.f1, now+x.t);
-          osc.frequency.exponentialRampToValueAtTime(x.f2, now+x.t+x.d*0.45);
-          osc.frequency.exponentialRampToValueAtTime(Math.max(260,x.f1*0.65), now+x.t+x.d);
-          gain.gain.setValueAtTime(0.0001, now+x.t);
-          gain.gain.exponentialRampToValueAtTime(0.16, now+x.t+0.03);
-          gain.gain.exponentialRampToValueAtTime(0.0001, now+x.t+x.d);
-          osc.connect(gain).connect(ctx.destination);
-          osc.start(now+x.t); osc.stop(now+x.t+x.d+0.02);
-        });
-        setTimeout(()=>ctx.close().catch(()=>{}),1400);
-      }catch(e){ window.showToast('🐓 닭소리를 재생할 수 없습니다'); }
+        const AC=window.AudioContext||window.webkitAudioContext;
+        if(!AC)return false;
+        if(!chimeAudioContext||chimeAudioContext.state==='closed') chimeAudioContext=new AC();
+        if(chimeAudioContext.state==='suspended') await chimeAudioContext.resume();
+        return true;
+      }catch(e){
+        console.warn('chime unlock failed',e);
+        return false;
+      }
     }
+
+    ['pointerdown','touchstart','click'].forEach(evt=>{
+      document.addEventListener(evt,unlockChimeAudio,{once:true,passive:true});
+    });
+
+    async function playRoosterChime(){
+      try{
+        if(!(await unlockChimeAudio())) throw new Error('audio context unavailable');
+        const ctx=chimeAudioContext;
+        const now=ctx.currentTime+0.03;
+        const phrases=[
+          {t:0.00,a:500,b:780,c:430,d:0.30,g:0.20},
+          {t:0.34,a:580,b:930,c:500,d:0.34,g:0.22},
+          {t:0.72,a:650,b:1100,c:550,d:0.42,g:0.24},
+          {t:1.20,a:540,b:860,c:390,d:0.55,g:0.20}
+        ];
+        phrases.forEach(p=>{
+          const osc=ctx.createOscillator(), gain=ctx.createGain(), filter=ctx.createBiquadFilter();
+          osc.type='sawtooth';
+          filter.type='lowpass'; filter.frequency.value=2300;
+          osc.frequency.setValueAtTime(p.a,now+p.t);
+          osc.frequency.exponentialRampToValueAtTime(p.b,now+p.t+p.d*0.38);
+          osc.frequency.exponentialRampToValueAtTime(p.c,now+p.t+p.d);
+          gain.gain.setValueAtTime(0.0001,now+p.t);
+          gain.gain.exponentialRampToValueAtTime(p.g,now+p.t+0.025);
+          gain.gain.exponentialRampToValueAtTime(0.0001,now+p.t+p.d);
+          osc.connect(filter); filter.connect(gain); gain.connect(ctx.destination);
+          osc.start(now+p.t); osc.stop(now+p.t+p.d+0.03);
+        });
+        return true;
+      }catch(e){
+        console.error('Rooster chime error',e);
+        window.showToast('🐓 소리 재생 실패 · 화면을 한 번 터치 후 다시 테스트하세요');
+        return false;
+      }
+    }
+
+    async function testRoosterChime(){
+      const ok=await playRoosterChime();
+      if(ok) window.showToast('🐓 닭소리 테스트');
+    }
+    window.testRoosterChime=testRoosterChime;
+
     function playHourlyChime(){
       const choice=document.getElementById('chimeSelect')?.value;
       if(choice==='recorded'){
-        if(window.recordedAudioBlob || window.remoteAudioUrl) playRecordedAudio();
+        if(window.recordedAudioBlob||window.remoteAudioUrl) playRecordedAudio();
         else window.showToast('정시 녹음소리가 없습니다');
       }else if(choice==='rooster'){
         playRoosterChime();
       }
     }
+
     function checkHourlyChime(now){
-      if(now.getMinutes()!==0 || now.getSeconds()!==0) return;
+      if(now.getMinutes()!==0||now.getSeconds()>2)return;
       const key=`${now.getFullYear()}-${now.getMonth()}-${now.getDate()}-${now.getHours()}`;
-      if(key===lastHourlyKey) return;
+      if(key===lastHourlyKey)return;
       lastHourlyKey=key;
       playHourlyChime();
     }
 
     // ---------- 메뉴 ----------
-    function toggleControlPanel(panelId,event){ event?.stopPropagation(); const target=document.getElementById(panelId),open=target.hidden; document.querySelectorAll('.control-panel').forEach(p=>p.hidden=true); target.hidden=!open; }
-    function toggleSubPanel(panelId,event){ event?.stopPropagation(); const target=document.getElementById(panelId),open=target.hidden; ['backgroundPanel','soundPanel','letterPanel','saveSharePanel'].forEach(id=>{const el=document.getElementById(id);if(el)el.hidden=true;}); target.hidden=!open; }
-    document.addEventListener('click',e=>{if(!e.target.closest('.top-controls'))document.querySelectorAll('.control-panel').forEach(p=>p.hidden=true);});
+    function toggleControlPanel(panelId,event){
+      event?.stopPropagation();
+      const target=document.getElementById(panelId);
+      const btn=document.getElementById('mainMenuBtn');
+      const open=target.hidden;
+      document.querySelectorAll('.control-panel').forEach(p=>p.hidden=true);
+      target.hidden=!open;
+      btn?.classList.toggle('opened',open);
+    }
+    function toggleSubPanel(panelId,event){
+      event?.stopPropagation();
+      const target=document.getElementById(panelId);
+      const open=target.hidden;
+      ['backgroundPanel','soundPanel','letterPanel','saveSharePanel'].forEach(id=>{
+        const el=document.getElementById(id);
+        if(el) el.hidden=true;
+      });
+      target.hidden=!open;
+    }
+    document.addEventListener('click',e=>{
+      if(!e.target.closest('.top-controls')){
+        document.querySelectorAll('.control-panel').forEach(p=>p.hidden=true);
+        document.getElementById('mainMenuBtn')?.classList.remove('opened');
+      }
+    });
 
     // ---------- 스타일 ----------
     const contentInput=document.getElementById('dialContentInput');
     document.getElementById('fontFamilySelect').addEventListener('change',e=>contentInput.style.fontFamily=e.target.value);
     document.getElementById('fontSizeSelect').addEventListener('change',e=>contentInput.style.fontSize=e.target.value);
     document.getElementById('textColorPicker').addEventListener('input',e=>contentInput.style.color=e.target.value);
+    document.getElementById('narratorSelect')?.addEventListener('change',()=>{
+      window.aiNarratorBlob=null;
+      window.remoteNarratorAudioUrl='';
+      window.aiNarratorStyleVersion='';
+    });
+    document.getElementById('backgroundIntervalSelect')?.addEventListener('change',e=>{
+      window.backgroundRotationSeconds=Number(e.target.value||15);
+      if((window.backgroundPlaylist||[]).length>1) startBackgroundRotation();
+      window.showToast(`⏱ 배경 전환 ${window.backgroundRotationSeconds}초`);
+    });
+    document.getElementById('backgroundTransitionSelect')?.addEventListener('change',e=>{
+      window.showToast(e.target.value==='soft' ? '✨ 부드러운 전환' : '⚡ 바로 전환');
+    });
 
     // ---------- 크기 ----------
     const scaler=document.getElementById('scalerElement');
