@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Luxury Smartwatch - Standard Edition v1.9.6 Rectangular Case</title>
+  <title>Luxury Smartwatch - Standard Edition v1.9.7 Pro Voice</title>
   <link rel="preconnect" href="https://fonts.googleapis.com/">
   <link rel="preconnect" href="https://fonts.gstatic.com/" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Inter:wght@400;600;800;900&family=JetBrains+Mono:wght@500;700&family=Nanum+Myeongjo:wght@700;800&family=Noto+Sans+KR:wght@400;700;900&family=Noto+Serif+KR:wght@400;700;900&display=swap" rel="stylesheet">
@@ -626,13 +626,18 @@
                     </select>
                     <input type="color" id="textColorPicker" class="style-color-picker" value="#fbcfe8" title="글자 색상">
                     <select id="narratorSelect" class="style-select" title="내레이터">
-                      <option value="male">😊 남자 · 미소톤</option>
-                      <option value="female" selected>😊 여자 · 미소톤</option>
+                      <option value="male">🎙 남성 전문 성우</option>
+                      <option value="female" selected>🎙 여성 전문 성우</option>
                     </select>
-                    <button type="button" class="btn-custom" onclick="playNarration()">▶ 😊 웃는 AI 내레이터</button>
-                    <button type="button" class="btn-custom" onclick="regenerateNarration()">↻ 미소 음성 다시 생성</button>
+                    <select id="narratorMoodSelect" class="style-select" title="성우 감정">
+                      <option value="warm" selected>따뜻하게</option>
+                      <option value="calm">잔잔하게</option>
+                      <option value="bright">밝게</option>
+                    </select>
+                    <button type="button" class="btn-custom" onclick="playNarration()">▶ 전문 성우 재생</button>
+                    <button type="button" class="btn-custom" onclick="regenerateNarration()">↻ 성우 음성 다시 생성</button>
                     <button type="button" class="btn-custom" onclick="stopNarration()">■ 정지</button>
-                    <div style="font-size:9px;line-height:1.25;color:#fbcfe8;text-align:center;padding:2px 1px;">AI 합성 음성 · 미소 짓는 듯한 따뜻한 톤</div>
+                    <div style="font-size:9px;line-height:1.25;color:#fbcfe8;text-align:center;padding:2px 1px;">AI 합성 음성 · 자연스러운 전문 성우 스타일</div>
                   </div>
 
                   <div id="saveSharePanel" class="control-panel" style="left:159px;top:120px" hidden>
@@ -1173,8 +1178,9 @@
     let currentNarratorAudio = null;
     let narratorRequestController = null;
     let cachedNarratorVoices = [];
-    const NARRATOR_STYLE_VERSION = 'smile-v2';
+    const NARRATOR_STYLE_VERSION = 'pro-voice-v1';
     window.aiNarratorStyleVersion = '';
+    window.aiNarratorCacheKey = '';
 
     function refreshNarratorVoices(){
       if(!('speechSynthesis' in window)) return [];
@@ -1240,8 +1246,8 @@
       await currentNarratorAudio.play();
       window.showToast(
         gender === 'male'
-          ? '😊 미소 짓는 AI 남자 목소리로 읽는 중'
-          : '😊 미소 짓는 AI 여자 목소리로 읽는 중'
+          ? '🎙 남성 전문 성우 스타일로 읽는 중'
+          : '🎙 여성 전문 성우 스타일로 읽는 중'
       );
     }
 
@@ -1251,12 +1257,12 @@
       await currentNarratorAudio.play();
       window.showToast(
         gender === 'male'
-          ? '😊 저장된 AI 남자 목소리 재생 중'
-          : '😊 저장된 AI 여자 목소리 재생 중'
+          ? '🎙 저장된 남성 성우 음성 재생 중'
+          : '🎙 저장된 여성 성우 음성 재생 중'
       );
     }
 
-    async function browserNarratorFallback(rawText, gender){
+    async function browserNarratorFallback(rawText, gender, mood='warm'){
       if(!('speechSynthesis' in window)){
         window.showToast('❌ AI 음성 생성 실패');
         return;
@@ -1268,8 +1274,9 @@
       narrationUtterance = new SpeechSynthesisUtterance(makeWarmNarrationText(rawText));
       narrationUtterance.lang = 'ko-KR';
       narrationUtterance.volume = 1.0;
-      narrationUtterance.rate = gender === 'male' ? 0.92 : 0.96;
-      narrationUtterance.pitch = gender === 'male' ? 0.86 : 1.06;
+      const moodRate = mood === 'calm' ? 0.88 : (mood === 'bright' ? 1.00 : 0.94);
+      narrationUtterance.rate = moodRate;
+      narrationUtterance.pitch = gender === 'male' ? 0.90 : 1.03;
 
       const voice = chooseFallbackVoice(gender);
       if(voice) narrationUtterance.voice = voice;
@@ -1296,8 +1303,9 @@
       window.aiNarratorBlob = null;
       window.remoteNarratorAudioUrl = '';
       window.aiNarratorStyleVersion = '';
+      window.aiNarratorCacheKey = '';
       try { await idbSet('aiNarratorAudio', null); } catch(_) {}
-      window.showToast('😊 미소 음성을 새로 만들고 있습니다...');
+      window.showToast('🎙 전문 성우 음성을 새로 만들고 있습니다...');
       await playNarration();
     }
     window.regenerateNarration = regenerateNarration;
@@ -1310,9 +1318,11 @@
       }
 
       const gender = document.getElementById('narratorSelect')?.value || 'female';
+      const mood = document.getElementById('narratorMoodSelect')?.value || 'warm';
+      const cacheKey = `${NARRATOR_STYLE_VERSION}|${gender}|${mood}|${rawText}`;
 
       // 같은 문장으로 이미 생성한 로컬 AI 음성이 있으면 API를 다시 호출하지 않는다.
-      if(window.aiNarratorBlob && window.aiNarratorStyleVersion === NARRATOR_STYLE_VERSION){
+      if(window.aiNarratorBlob && window.aiNarratorStyleVersion === NARRATOR_STYLE_VERSION && window.aiNarratorCacheKey === cacheKey){
         try {
           await playAiNarratorBlob(window.aiNarratorBlob, gender);
           return;
@@ -1322,7 +1332,7 @@
       }
 
       // 공유받은 링크에 저장된 AI 내레이터가 있으면 그대로 재생한다.
-      if(window.remoteNarratorAudioUrl){
+      if(window.remoteNarratorAudioUrl && !window.aiNarratorCacheKey){
         try {
           await playRemoteNarrator(window.remoteNarratorAudioUrl, gender);
           return;
@@ -1343,7 +1353,8 @@
           body: JSON.stringify({
             text: rawText,
             gender,
-            style: 'smiling',
+            style: 'professional',
+            mood,
             styleVersion: NARRATOR_STYLE_VERSION
           }),
           signal: narratorRequestController.signal
@@ -1363,6 +1374,7 @@
 
         window.aiNarratorBlob = new Blob([blob], { type: blob.type || 'audio/mpeg' });
         window.aiNarratorStyleVersion = NARRATOR_STYLE_VERSION;
+        window.aiNarratorCacheKey = cacheKey;
         window.remoteNarratorAudioUrl = '';
 
         try { await idbSet('aiNarratorAudio', window.aiNarratorBlob); } catch(_) {}
@@ -1373,7 +1385,7 @@
         if(err?.name === 'AbortError') return;
         console.error('AI Narrator error:', err);
         window.showToast('⚠️ AI 음성 실패 · 예비 음성 사용');
-        await browserNarratorFallback(rawText, gender);
+        await browserNarratorFallback(rawText, gender, mood);
       } finally {
         narratorRequestController = null;
       }
@@ -1493,10 +1505,18 @@
     document.getElementById('fontFamilySelect').addEventListener('change',e=>contentInput.style.fontFamily=e.target.value);
     document.getElementById('fontSizeSelect').addEventListener('change',e=>contentInput.style.fontSize=e.target.value);
     document.getElementById('textColorPicker').addEventListener('input',e=>contentInput.style.color=e.target.value);
-    document.getElementById('narratorSelect')?.addEventListener('change',()=>{
+    function resetNarratorCache(){
       window.aiNarratorBlob=null;
       window.remoteNarratorAudioUrl='';
       window.aiNarratorStyleVersion='';
+      window.aiNarratorCacheKey='';
+    }
+    document.getElementById('narratorSelect')?.addEventListener('change',resetNarratorCache);
+    document.getElementById('narratorMoodSelect')?.addEventListener('change',resetNarratorCache);
+    document.getElementById('dialContentInput')?.addEventListener('input',()=>{
+      window.aiNarratorBlob=null;
+      window.aiNarratorStyleVersion='';
+      window.aiNarratorCacheKey='';
     });
     document.getElementById('backgroundIntervalSelect')?.addEventListener('change',e=>{
       window.backgroundRotationSeconds=Number(e.target.value||15);
