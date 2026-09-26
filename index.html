@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Luxury Smartwatch - Standard Edition v1.9.7 Pro Voice</title>
+  <title>Luxury Smartwatch - Standard Edition v2.0.2 Direct Audio Fix</title>
   <link rel="preconnect" href="https://fonts.googleapis.com/">
   <link rel="preconnect" href="https://fonts.gstatic.com/" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Inter:wght@400;600;800;900&family=JetBrains+Mono:wght@500;700&family=Nanum+Myeongjo:wght@700;800&family=Noto+Sans+KR:wght@400;700;900&family=Noto+Serif+KR:wght@400;700;900&display=swap" rel="stylesheet">
@@ -43,8 +43,11 @@
     window.remoteBackgroundType = '';
     window.customMeteorBlob = null;
     window.remoteMeteorUrl = '';
+    window.currentRelayCount = 0;
+    window.currentRelayHistory = [];
+    window.relayCompleted = false;
 
-    const SCHEMA_VERSION = 5;
+    const SCHEMA_VERSION = 6;
 
     function newWatchId() {
       if (window.crypto?.getRandomValues) {
@@ -90,18 +93,38 @@
         backgroundPlaylist: Array.isArray(raw.backgroundPlaylist) ? raw.backgroundPlaylist : [],
         backgroundRotationSeconds: Number(raw.backgroundRotationSeconds || 15),
         meteorUrl: raw.meteorUrl || '',
+        relayCount: Number(raw.relayCount || 0),
+        relayHistory: Array.isArray(raw.relayHistory) ? raw.relayHistory : [],
+        relayCompleted: !!raw.relayCompleted,
         parentId: raw.parentId || null,
         createdAt: raw.createdAt || '',
         updatedAt: raw.updatedAt || ''
       };
     }
 
-    window.saveToFirestoreAndShare = async function() {
+    window.saveToFirestoreAndShare = async function(mode = 'normal') {
       try {
         window.showToast?.('☁️ 클라우드 저장 중...');
 
         const sourceId = new URLSearchParams(location.search).get('id') || null;
         const docId = newWatchId(); // 항상 새 링크 생성
+
+        const isRelay = mode === 'relay';
+        const nextRelayCount = isRelay
+          ? Math.max(1, Number(window.currentRelayCount || 0) + 1)
+          : Number(window.currentRelayCount || 0);
+
+        const baseRelayHistory = Array.isArray(window.currentRelayHistory)
+          ? [...window.currentRelayHistory]
+          : [];
+
+        const relayHistory = isRelay
+          ? [...baseRelayHistory, {
+              step: nextRelayCount,
+              fromWatchId: sourceId || null,
+              createdAt: new Date().toISOString()
+            }].slice(-30)
+          : baseRelayHistory.slice(-30);
 
         let audioUrl = window.remoteAudioUrl || '';
         let narratorAudioUrl = window.remoteNarratorAudioUrl || '';
@@ -165,6 +188,9 @@
           backgroundPlaylist,
           backgroundRotationSeconds: Number(document.getElementById('backgroundIntervalSelect')?.value || window.backgroundRotationSeconds || 15),
           meteorUrl,
+          relayCount: nextRelayCount,
+          relayHistory,
+          relayCompleted: mode === 'complete' ? true : !!window.relayCompleted,
           parentId: sourceId,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
@@ -185,8 +211,13 @@
         const base = 'https://luxury-watch-app-111.vercel.app/';
         const shareUrl = `${base}?id=${encodeURIComponent(docId)}`;
         const userText = watchPackage.text.trim();
-        const shareMessage = `[Luxury Smartwatch 편지]\n\n${userText}\n\n👉 시계 열기:\n${shareUrl}`;
+        const relayLine = isRelay ? `\n\n🏃 ${watchPackage.relayCount}번째 릴레이 편지` : '';
+        const shareMessage = `[Luxury Smartwatch 편지]${relayLine}\n\n${userText}\n\n👉 시계 열기:\n${shareUrl}`;
         window.__lastShareUrl = shareUrl;
+        window.currentRelayCount = watchPackage.relayCount;
+        window.currentRelayHistory = watchPackage.relayHistory;
+        window.relayCompleted = watchPackage.relayCompleted;
+        window.updateRelayBadge?.();
 
         // 방금 저장한 문서를 즉시 다시 읽어, 링크가 실제로 복원 가능한지 확인한다.
         const verifySnap = await getDoc(doc(db, 'watches', docId));
@@ -528,6 +559,17 @@
       backface-visibility:hidden; -webkit-backface-visibility:hidden;
     
       transform:translateZ(0);}
+
+    .relay-badge{
+      position:absolute; left:50%; bottom:132px; transform:translateX(-50%);
+      z-index:34; background:rgba(10,14,22,.78);
+      border:1px solid rgba(125,211,252,.65); color:#e0f2fe;
+      font-size:10px; font-weight:800; letter-spacing:.2px;
+      padding:4px 9px; border-radius:999px;
+      box-shadow:0 4px 12px rgba(0,0,0,.5);
+      pointer-events:none; display:none; white-space:nowrap;
+    }
+
     @media (max-width:600px){
       .scaler{width:100vw!important;height:100dvh!important;transform:none!important}
       .watch-container{width:100vw!important;height:100dvh!important;justify-content:center}
@@ -604,12 +646,15 @@
 
                   <div id="soundPanel" class="control-panel" style="left:159px;top:40px" hidden>
                     <button type="button" id="recordBtn" class="btn-custom btn-action-record" onclick="toggleRecording()">🎙 녹음</button>
-                    <button type="button" id="playAudioBtn" class="btn-custom" onclick="playRecordedAudio()" style="display:none;background:rgba(236,72,153,.9);color:#fff;font-weight:800">▶ 재생음</button>
+                    <label for="voiceFileUpload" class="btn-custom">🎧 음성파일</label>
+                    <input type="file" id="voiceFileUpload" accept="audio/*,.mp3,.m4a,.wav,.webm,.ogg" style="display:none">
+                    <button type="button" id="playAudioBtn" class="btn-custom" onclick="playRecordedAudio()" style="display:none;background:rgba(236,72,153,.9);color:#fff;font-weight:800">▶ 녹음 재생</button>
                     <select id="chimeSelect" class="chime-select" title="정시알림음 선택">
                       <option value="rooster" selected>🐓 닭소리</option>
                       <option value="recorded">🎙 녹음소리</option>
                     </select>
                     <button type="button" class="btn-custom" onclick="testRoosterChime()">🐓 닭소리 테스트</button>
+                    <button type="button" class="btn-custom" onclick="testRecordedChime()">🎙 녹음소리 테스트</button>
                   </div>
 
                   <div id="letterPanel" class="control-panel" style="left:159px;top:80px" hidden>
@@ -625,24 +670,13 @@
                       <option value="13px" selected>13px</option><option value="14px">14px</option><option value="16px">16px</option>
                     </select>
                     <input type="color" id="textColorPicker" class="style-color-picker" value="#fbcfe8" title="글자 색상">
-                    <select id="narratorSelect" class="style-select" title="내레이터">
-                      <option value="male">🎙 남성 전문 성우</option>
-                      <option value="female" selected>🎙 여성 전문 성우</option>
-                    </select>
-                    <select id="narratorMoodSelect" class="style-select" title="성우 감정">
-                      <option value="warm" selected>따뜻하게</option>
-                      <option value="calm">잔잔하게</option>
-                      <option value="bright">밝게</option>
-                    </select>
-                    <button type="button" class="btn-custom" onclick="playNarration()">▶ 전문 성우 재생</button>
-                    <button type="button" class="btn-custom" onclick="regenerateNarration()">↻ 성우 음성 다시 생성</button>
-                    <button type="button" class="btn-custom" onclick="stopNarration()">■ 정지</button>
-                    <div style="font-size:9px;line-height:1.25;color:#fbcfe8;text-align:center;padding:2px 1px;">AI 합성 음성 · 자연스러운 전문 성우 스타일</div>
                   </div>
 
                   <div id="saveSharePanel" class="control-panel" style="left:159px;top:120px" hidden>
                     <button type="button" class="btn-custom" onclick="saveCurrentStateLocally()">저장</button>
                     <button type="button" class="btn-custom" onclick="window.saveToFirestoreAndShare()">카톡링크</button>
+                    <button type="button" class="btn-custom" onclick="startRelayShare()">🎁 릴레이 전달</button>
+                    <button type="button" class="btn-custom" onclick="completeRelay()">🏁 릴레이 완성</button>
                   </div>
                 </div>
 
@@ -651,6 +685,8 @@
                   <div class="cal-divider"></div>
                   <div class="cal-day-date"><span class="cal-day-text" id="calDay">WED</span><span class="cal-date-num" id="calDate">16</span></div>
                 </div>
+
+                <div id="relayBadge" class="relay-badge"></div>
 
                 <div class="dial-input-container">
                   <textarea class="dial-textarea" id="dialContentInput" rows="5">화사한 벚꽃이 피어나는 봄날,
@@ -680,6 +716,42 @@
       clearTimeout(window.__toastTimer);
       window.__toastTimer = setTimeout(()=>toast.style.opacity='0',2500);
     };
+
+    window.updateRelayBadge = function(){
+      const badge=document.getElementById('relayBadge');
+      if(!badge)return;
+      const count=Number(window.currentRelayCount||0);
+      if(count>0){
+        badge.style.display='block';
+        badge.textContent=window.relayCompleted ? `🏁 ${count}명 릴레이 완성` : `🏃 ${count}번째 릴레이`;
+      }else{
+        badge.style.display='none';
+        badge.textContent='';
+      }
+    };
+
+    async function startRelayShare(){
+      if(window.relayCompleted){
+        window.showToast('🏁 이미 완성된 릴레이입니다');
+        return;
+      }
+      window.showToast('🎁 다음 사람에게 전달할 새 링크를 만듭니다');
+      await window.saveToFirestoreAndShare('relay');
+    }
+    window.startRelayShare=startRelayShare;
+
+    async function completeRelay(){
+      const count=Number(window.currentRelayCount||0);
+      if(count<1){
+        window.showToast('먼저 릴레이 전달을 시작하세요');
+        return;
+      }
+      window.relayCompleted=true;
+      window.updateRelayBadge();
+      window.showToast(`🏁 ${count}명 릴레이 완성`);
+      await window.saveToFirestoreAndShare('complete');
+    }
+    window.completeRelay=completeRelay;
 
     const DEFAULT_GOLD_BASE64 = "data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3CradialGradient id='goldGlow' cx='35%25' cy='30%25' r='65%25'%3E%3Cstop offset='0%25' stop-color='%23ffffff'/%3E%3Cstop offset='25%25' stop-color='%23fef08a'/%3E%3Cstop offset='55%25' stop-color='%23eab308'/%3E%3Cstop offset='85%25' stop-color='%23a16207'/%3E%3Cstop offset='100%25' stop-color='%23451a03'/%3E%3C/radialGradient%3E%3C/defs%3E%3Cpath d='M45,12 C62,9 78,22 84,38 C89,52 82,68 76,80 C68,91 48,93 35,88 C20,82 12,68 14,52 C15,36 28,16 45,12 Z' fill='url(%23goldGlow)'/%3E%3C/svg%3E";
     document.querySelectorAll('.gold-sync-target').forEach(img=>img.src=DEFAULT_GOLD_BASE64);
@@ -827,6 +899,11 @@
         startBackgroundRotation();
       }
 
+      window.currentRelayCount=Number(data.relayCount||0);
+      window.currentRelayHistory=Array.isArray(data.relayHistory)?data.relayHistory:[];
+      window.relayCompleted=!!data.relayCompleted;
+      window.updateRelayBadge?.();
+
       window.customMeteorBlob=null;
       window.remoteMeteorUrl=data.meteorUrl||'';
       if(window.remoteMeteorUrl){
@@ -857,7 +934,9 @@
           fontSize:document.getElementById('fontSizeSelect').value,
           textColor:document.getElementById('textColorPicker').value,
           chime:document.getElementById('chimeSelect').value,
-          narrator:document.getElementById('narratorSelect')?.value||'female',
+          relayCount:Number(window.currentRelayCount||0),
+          relayHistory:Array.isArray(window.currentRelayHistory)?window.currentRelayHistory:[],
+          relayCompleted:!!window.relayCompleted,
           savedAt:new Date().toISOString()
         }));
         if(window.recordedAudioBlob) await dbPut('audio',window.recordedAudioBlob);
@@ -877,7 +956,10 @@
           if(s.fontSize){document.getElementById('fontSizeSelect').value=s.fontSize;input.style.fontSize=s.fontSize;}
           if(s.textColor){document.getElementById('textColorPicker').value=s.textColor;input.style.color=s.textColor;}
           if(s.chime) document.getElementById('chimeSelect').value=s.chime;
-          if(s.narrator&&document.getElementById('narratorSelect')) document.getElementById('narratorSelect').value=s.narrator;
+          window.currentRelayCount=Number(s.relayCount||0);
+          window.currentRelayHistory=Array.isArray(s.relayHistory)?s.relayHistory:[];
+          window.relayCompleted=!!s.relayCompleted;
+          window.updateRelayBadge?.();
         }
         const audio=await dbGet('audio'); if(audio){window.recordedAudioBlob=audio; const b=document.getElementById('playAudioBtn'); b.style.display='block'; b.textContent='▶ 재생음';}
         const bg=await dbGet('background'); if(bg?.blob){window.customBackgroundBlob=bg.blob;window.customBackgroundType=bg.type;window.applyBackground(URL.createObjectURL(bg.blob),bg.type);}
@@ -921,7 +1003,22 @@
       window.showToast(`🎬 영상 ${files.length}개 추가 · 자동전환 시작`);
       e.target.value='';
     });
-    document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
+    
+    document.getElementById('voiceFileUpload')?.addEventListener('change',e=>{
+      const f=e.target.files?.[0];
+      if(!f)return;
+      window.recordedAudioBlob=f;
+      window.remoteAudioUrl='';
+      const b=document.getElementById('playAudioBtn');
+      if(b){
+        b.style.display='block';
+        b.textContent='▶ 재생음';
+      }
+      window.showToast('🎧 음성파일 적용 완료');
+      e.target.value='';
+    });
+
+document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
       const f=e.target.files[0];
       if(!f)return;
       window.customMeteorBlob=f;
@@ -934,24 +1031,22 @@
       window.showToast('🕰️ 시·분·초침 이미지 적용');
     });
 
-    // ---------- 녹음 v1.7 : HQ Voice ----------
-    // 목표: 모바일/PC 공통으로 또렷한 음성 편지 녹음
-    // - echoCancellation / noiseSuppression / autoGainControl
-    // - Opus 128kbps 우선, Safari 계열은 지원 MIME 자동 선택
-    // - 80Hz 하이패스 + 가벼운 compressor + 소폭 gain
+    // ---------- 녹음 v2.0.2 : Direct / Maximum Compatibility ----------
+    // Web Audio 가공을 거치지 않고 마이크 스트림을 MediaRecorder에 직접 연결한다.
+    // Chrome / Edge / Android / Safari 계열에서 재생 호환성을 우선한다.
     let mediaRecorder = null;
     let audioChunks = [];
     let recordingSourceStream = null;
-    let recordingAudioContext = null;
-    let recordingProcessedStream = null;
+    let currentAudio = null;
+    let currentObjectUrl = null;
 
     function getBestRecordingOptions() {
       const candidates = [
         'audio/webm;codecs=opus',
-        'audio/ogg;codecs=opus',
-        'audio/mp4'
+        'audio/mp4',
+        'audio/webm',
+        'audio/ogg;codecs=opus'
       ];
-
       for (const mimeType of candidates) {
         try {
           if (window.MediaRecorder?.isTypeSupported?.(mimeType)) {
@@ -959,162 +1054,142 @@
           }
         } catch (_) {}
       }
-
-      return { audioBitsPerSecond: 128000 };
+      return {};
     }
 
-    async function buildVoiceProcessedStream(rawStream) {
-      const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      if (!AudioCtx) return rawStream;
+    function cleanupCurrentAudio(){
+      try{
+        if(currentAudio){
+          currentAudio.pause();
+          currentAudio.src = '';
+          currentAudio.load();
+        }
+      }catch(_){}
+      currentAudio = null;
 
-      try {
-        const ctx = new AudioCtx();
-        if (ctx.state === 'suspended') await ctx.resume();
-
-        const source = ctx.createMediaStreamSource(rawStream);
-
-        // 저주파 진동/책상 충격/에어컨 럼블 감소
-        const highPass = ctx.createBiquadFilter();
-        highPass.type = 'highpass';
-        highPass.frequency.value = 80;
-        highPass.Q.value = 0.7;
-
-        // 작은 목소리와 큰 목소리의 차이를 부드럽게 정리
-        const compressor = ctx.createDynamicsCompressor();
-        compressor.threshold.value = -24;
-        compressor.knee.value = 24;
-        compressor.ratio.value = 3;
-        compressor.attack.value = 0.01;
-        compressor.release.value = 0.22;
-
-        // 과도하지 않은 음량 보정
-        const gain = ctx.createGain();
-        gain.gain.value = 1.12;
-
-        const dest = ctx.createMediaStreamDestination();
-
-        source.connect(highPass);
-        highPass.connect(compressor);
-        compressor.connect(gain);
-        gain.connect(dest);
-
-        recordingAudioContext = ctx;
-        recordingProcessedStream = dest.stream;
-
-        return dest.stream;
-      } catch (err) {
-        console.warn('Voice processing fallback:', err);
-        return rawStream;
+      if(currentObjectUrl){
+        try{ URL.revokeObjectURL(currentObjectUrl); }catch(_){}
+        currentObjectUrl = null;
       }
+    }
+
+    function stopMicTracks(){
+      try{
+        recordingSourceStream?.getTracks()?.forEach(t=>t.stop());
+      }catch(_){}
+      recordingSourceStream = null;
     }
 
     async function toggleRecording() {
-      if (!mediaRecorder || mediaRecorder.state === 'inactive') {
+      const recordBtn = document.getElementById('recordBtn');
+
+      if (mediaRecorder && mediaRecorder.state === 'recording') {
+        recordBtn.disabled = true;
+        recordBtn.textContent = '처리 중...';
+        try { mediaRecorder.requestData?.(); } catch (_) {}
+        mediaRecorder.stop();
+        return;
+      }
+
+      try {
+        if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+          window.showToast('❌ 이 브라우저는 녹음을 지원하지 않습니다');
+          return;
+        }
+
+        cleanupCurrentAudio();
+        window.recordedAudioBlob = null;
+        window.remoteAudioUrl = '';
+        audioChunks = [];
+
+        recordingSourceStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+            channelCount: 1
+          }
+        });
+
+        const opts = getBestRecordingOptions();
         try {
-          if (!navigator.mediaDevices?.getUserMedia) {
-            window.showToast('❌ 이 브라우저는 마이크 녹음을 지원하지 않습니다');
+          mediaRecorder = Object.keys(opts).length
+            ? new MediaRecorder(recordingSourceStream, opts)
+            : new MediaRecorder(recordingSourceStream);
+        } catch (_) {
+          mediaRecorder = new MediaRecorder(recordingSourceStream);
+        }
+
+        mediaRecorder.ondataavailable = e => {
+          if (e.data && e.data.size > 0) audioChunks.push(e.data);
+        };
+
+        mediaRecorder.onerror = e => {
+          console.error('MediaRecorder error:', e);
+          stopMicTracks();
+          recordBtn.disabled = false;
+          recordBtn.classList.remove('recording');
+          recordBtn.textContent = '🎙 녹음';
+          window.showToast('❌ 녹음 오류');
+        };
+
+        mediaRecorder.onstop = () => {
+          const mime = mediaRecorder?.mimeType || audioChunks[0]?.type || 'audio/webm';
+          const blob = new Blob(audioChunks, { type: mime });
+
+          stopMicTracks();
+          recordBtn.disabled = false;
+          recordBtn.classList.remove('recording');
+          recordBtn.textContent = '🎙 녹음';
+
+          if (!blob.size) {
+            window.recordedAudioBlob = null;
+            window.showToast('❌ 녹음 데이터가 없습니다');
             return;
           }
 
-          recordingSourceStream = await navigator.mediaDevices.getUserMedia({
-            audio: {
-              echoCancellation: true,
-              noiseSuppression: true,
-              autoGainControl: true,
-              channelCount: 1,
-              sampleRate: { ideal: 48000 },
-              sampleSize: { ideal: 16 }
-            }
-          });
+          window.recordedAudioBlob = blob;
+          window.remoteAudioUrl = '';
 
-          const recordStream = await buildVoiceProcessedStream(recordingSourceStream);
-          audioChunks = [];
-
-          const options = getBestRecordingOptions();
-
-          try {
-            mediaRecorder = new MediaRecorder(recordStream, options);
-          } catch (_) {
-            // 일부 Safari/모바일에서 bitrate 옵션 조합이 실패할 경우 기본값으로 재시도
-            mediaRecorder = new MediaRecorder(recordStream);
+          const playBtn = document.getElementById('playAudioBtn');
+          if (playBtn) {
+            playBtn.style.display = 'block';
+            playBtn.textContent = '▶ 녹음 재생';
           }
 
-          mediaRecorder.ondataavailable = (e) => {
-            if (e.data && e.data.size > 0) audioChunks.push(e.data);
-          };
+          const kb = Math.max(1, Math.round(blob.size / 1024));
+          window.showToast(`✅ 녹음 완료 · ${kb}KB · 재생 버튼을 누르세요`);
+        };
 
-          mediaRecorder.onerror = (e) => {
-            console.error('MediaRecorder error:', e);
-            window.showToast('❌ 녹음 중 오류가 발생했습니다');
-          };
+        // timeslice 없이 녹음하여 마지막 파일 헤더/메타데이터 호환성을 높임
+        mediaRecorder.start();
 
-          mediaRecorder.onstop = async () => {
-            const mime =
-              mediaRecorder?.mimeType ||
-              audioChunks[0]?.type ||
-              'audio/webm';
+        recordBtn.disabled = false;
+        recordBtn.classList.add('recording');
+        recordBtn.textContent = '■ 녹음 중지';
+        window.showToast('🔴 녹음 중입니다');
 
-            window.recordedAudioBlob = new Blob(audioChunks, { type: mime });
-            window.remoteAudioUrl = ''; // 새 녹음이 이전 원격 음성을 대체
-
-            const b = document.getElementById('playAudioBtn');
-            b.style.display = 'block';
-            b.textContent = '▶ 재생음';
-
-            // 사용한 마이크/오디오 자원 정리
-            try {
-              recordingSourceStream?.getTracks().forEach(t => t.stop());
-              recordingProcessedStream?.getTracks().forEach(t => t.stop());
-              if (recordingAudioContext && recordingAudioContext.state !== 'closed') {
-                await recordingAudioContext.close();
-              }
-            } catch (_) {}
-
-            recordingSourceStream = null;
-            recordingProcessedStream = null;
-            recordingAudioContext = null;
-
-            window.showToast('🎤 고음질 녹음 완료 — 재생해서 확인하세요');
-          };
-
-          // 작은 timeslice로 모바일 메모리 안정성 향상
-          mediaRecorder.start(1000);
-
-          const recordBtn = document.getElementById('recordBtn');
-          recordBtn.classList.add('recording');
-          recordBtn.textContent = '■ 중지';
-
-          window.showToast('🔴 고음질 녹음 중 · 입에서 20~30cm 권장');
-        } catch (err) {
-          console.error(err);
-
-          if (err?.name === 'NotAllowedError' || err?.name === 'SecurityError') {
-            window.showToast('❌ 마이크 권한을 허용해주세요');
-          } else if (err?.name === 'NotFoundError') {
-            window.showToast('❌ 사용할 마이크를 찾지 못했습니다');
-          } else {
-            window.showToast('❌ 마이크를 시작하지 못했습니다');
-          }
-        }
-      } else if (mediaRecorder.state === 'recording') {
-        mediaRecorder.stop();
-
-        const recordBtn = document.getElementById('recordBtn');
+      } catch (err) {
+        console.error('Mic start error:', err);
+        stopMicTracks();
+        recordBtn.disabled = false;
         recordBtn.classList.remove('recording');
         recordBtn.textContent = '🎙 녹음';
+
+        if (err?.name === 'NotAllowedError' || err?.name === 'SecurityError') {
+          window.showToast('❌ 마이크 권한을 허용해주세요');
+        } else {
+          window.showToast('❌ 마이크 시작 실패');
+        }
       }
     }
-
-    let currentAudio = null;
-    let currentObjectUrl = null;
-    let playbackAudioContext = null;
-    let playbackSourceNode = null;
+    window.toggleRecording = toggleRecording;
 
     async function playRecordedAudio() {
-      let src = '';
+      cleanupCurrentAudio();
 
-      if (window.recordedAudioBlob) {
-        if (currentObjectUrl) URL.revokeObjectURL(currentObjectUrl);
+      let src = '';
+      if (window.recordedAudioBlob?.size) {
         currentObjectUrl = URL.createObjectURL(window.recordedAudioBlob);
         src = currentObjectUrl;
       } else if (window.remoteAudioUrl) {
@@ -1122,56 +1197,61 @@
       }
 
       if (!src) {
-        window.showToast('재생할 음성이 없습니다');
+        window.showToast('❌ 재생할 녹음소리가 없습니다');
         return;
       }
 
       try {
-        if (currentAudio) {
-          currentAudio.pause();
-          currentAudio.currentTime = 0;
+        currentAudio = document.getElementById('recordedAudioPlayer');
+        if (!currentAudio) {
+          currentAudio = document.createElement('audio');
+          currentAudio.id = 'recordedAudioPlayer';
+          currentAudio.playsInline = true;
+          currentAudio.preload = 'auto';
+          currentAudio.style.display = 'none';
+          document.body.appendChild(currentAudio);
         }
 
-        currentAudio = new Audio(src);
-        currentAudio.preload = 'auto';
+        currentAudio.pause();
+        currentAudio.src = src;
+        currentAudio.volume = 1;
+        currentAudio.muted = false;
+        currentAudio.load();
 
-        // 재생 시에도 약한 보정: 작은 녹음의 체감 음량 향상
-        const AudioCtx = window.AudioContext || window.webkitAudioContext;
-        if (AudioCtx) {
-          try {
-            playbackAudioContext = playbackAudioContext || new AudioCtx();
-            if (playbackAudioContext.state === 'suspended') {
-              await playbackAudioContext.resume();
-            }
+        // 재생 버튼 자체의 사용자 클릭 이벤트 안에서 바로 play() 호출.
+        const promise = currentAudio.play();
+        if (promise) await promise;
 
-            playbackSourceNode = playbackAudioContext.createMediaElementSource(currentAudio);
-            const gain = playbackAudioContext.createGain();
-            gain.gain.value = 1.15;
+        window.showToast('🔊 녹음소리 재생 중');
 
-            const limiter = playbackAudioContext.createDynamicsCompressor();
-            limiter.threshold.value = -3;
-            limiter.knee.value = 0;
-            limiter.ratio.value = 12;
-            limiter.attack.value = 0.003;
-            limiter.release.value = 0.12;
-
-            playbackSourceNode.connect(gain);
-            gain.connect(limiter);
-            limiter.connect(playbackAudioContext.destination);
-          } catch (audioGraphErr) {
-            console.warn('Playback enhancement fallback:', audioGraphErr);
-          }
-        }
-
-        await currentAudio.play();
-        window.showToast('▶ 음성 편지 재생 중');
+        currentAudio.onended = () => {
+          window.showToast('✅ 녹음소리 재생 완료');
+        };
+        currentAudio.onerror = () => {
+          console.error('audio element error:', currentAudio.error);
+          window.showToast('❌ 이 녹음 형식을 재생할 수 없습니다');
+        };
       } catch (err) {
-        console.error(err);
-        window.showToast('화면을 터치한 후 다시 재생하세요');
+        console.error('Recorded audio playback failed:', err);
+        window.showToast(
+          err?.name === 'NotAllowedError'
+            ? '❌ 화면을 한 번 누른 뒤 다시 재생하세요'
+            : '❌ 녹음 재생 실패'
+        );
       }
     }
+    window.playRecordedAudio = playRecordedAudio;
 
-    // ---------- AI 편지 내레이터 v1.5 ----------
+    function testRecordedChime(){
+      if (!window.recordedAudioBlob?.size && !window.remoteAudioUrl) {
+        window.showToast('먼저 녹음해주세요');
+        return;
+      }
+      playRecordedAudio();
+    }
+    window.testRecordedChime = testRecordedChime;
+
+    // ---------- Legacy AI narrator code retained only for backward compatibility; UI disabled ---------- AI 편지 내레이터 v1.5 ----------
     // 기본: Vercel /api/tts -> OpenAI TTS MP3
     // 실패 시: 브라우저 speechSynthesis fallback
     let narrationUtterance = null;
@@ -1505,19 +1585,6 @@
     document.getElementById('fontFamilySelect').addEventListener('change',e=>contentInput.style.fontFamily=e.target.value);
     document.getElementById('fontSizeSelect').addEventListener('change',e=>contentInput.style.fontSize=e.target.value);
     document.getElementById('textColorPicker').addEventListener('input',e=>contentInput.style.color=e.target.value);
-    function resetNarratorCache(){
-      window.aiNarratorBlob=null;
-      window.remoteNarratorAudioUrl='';
-      window.aiNarratorStyleVersion='';
-      window.aiNarratorCacheKey='';
-    }
-    document.getElementById('narratorSelect')?.addEventListener('change',resetNarratorCache);
-    document.getElementById('narratorMoodSelect')?.addEventListener('change',resetNarratorCache);
-    document.getElementById('dialContentInput')?.addEventListener('input',()=>{
-      window.aiNarratorBlob=null;
-      window.aiNarratorStyleVersion='';
-      window.aiNarratorCacheKey='';
-    });
     document.getElementById('backgroundIntervalSelect')?.addEventListener('change',e=>{
       window.backgroundRotationSeconds=Number(e.target.value||15);
       if((window.backgroundPlaylist||[]).length>1) startBackgroundRotation();
