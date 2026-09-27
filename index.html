@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Luxury Smartwatch - Standard Edition v2.0.4 Voice Music Recording Modes</title>
+  <title>Luxury Smartwatch - Standard Edition v2.0.5 Screen Recording Audio Import</title>
   <link rel="preconnect" href="https://fonts.googleapis.com/">
   <link rel="preconnect" href="https://fonts.gstatic.com/" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Inter:wght@400;600;800;900&family=JetBrains+Mono:wght@500;700&family=Nanum+Myeongjo:wght@700;800&family=Noto+Sans+KR:wght@400;700;900&family=Noto+Serif+KR:wght@400;700;900&display=swap" rel="stylesheet">
@@ -29,6 +29,7 @@
 
     window.recordedAudioBlob = null;
     window.remoteAudioUrl = '';
+    window.screenRecordingBlob = null;
     window.aiNarratorBlob = null;
     window.remoteNarratorAudioUrl = '';
     window.aiNarratorObjectUrl = '';
@@ -134,8 +135,9 @@
 
         // 새 녹음이 있으면 최신 음성 1개로 교체
         if (window.recordedAudioBlob) {
-          window.showToast?.('🎙️ 음성 업로드 중...');
-          const ext = extFromBlob(window.recordedAudioBlob, 'webm');
+          const isScreenRecording = (window.recordedAudioBlob.type || '').startsWith('video/');
+          window.showToast?.(isScreenRecording ? '📱 화면녹화 소리 업로드 중...' : '🎙️ 음성 업로드 중...');
+          const ext = extFromBlob(window.recordedAudioBlob, isScreenRecording ? 'mp4' : 'webm');
           audioUrl = await uploadBlob(`audio_letters/${docId}.${ext}`, window.recordedAudioBlob);
         }
 
@@ -669,6 +671,11 @@ window.addEventListener('DOMContentLoaded', async () => {
                     <button type="button" id="recordBtn" class="btn-custom btn-action-record" onclick="toggleRecording()">🎙 녹음</button>
                     <label for="voiceFileUpload" class="btn-custom">🎧 음성파일</label>
                     <input type="file" id="voiceFileUpload" accept="audio/*,.mp3,.m4a,.wav,.webm,.ogg" style="display:none">
+                    <label for="screenRecordUpload" class="btn-custom">📱 화면녹화</label>
+                    <input type="file" id="screenRecordUpload" accept="video/mp4,video/*,.mp4,.mov,.m4v,.webm" style="display:none">
+                    <div style="font-size:9px;line-height:1.25;color:#cbd5e1;text-align:center;padding:2px 1px;">
+                      화면녹화 영상의 소리 트랙을 재생음으로 사용
+                    </div>
                     <button type="button" id="playAudioBtn" class="btn-custom" onclick="playRecordedAudio()" style="display:none;background:rgba(236,72,153,.9);color:#fff;font-weight:800">▶ 녹음 재생</button>
                     <select id="chimeSelect" class="chime-select" title="정시알림음 선택">
                       <option value="rooster" selected>🐓 닭소리</option>
@@ -676,6 +683,7 @@ window.addEventListener('DOMContentLoaded', async () => {
                     </select>
                     <button type="button" class="btn-custom" onclick="testRoosterChime()">🐓 닭소리 테스트</button>
                     <button type="button" class="btn-custom" onclick="testRecordedChime()">🎙 녹음소리 테스트</button>
+                    <button type="button" class="btn-custom" onclick="playRecordedAudio()">📱 화면녹화 소리 테스트</button>
                   </div>
 
                   <div id="letterPanel" class="control-panel" style="left:159px;top:80px" hidden>
@@ -1039,6 +1047,26 @@ window.addEventListener('DOMContentLoaded', async () => {
       e.target.value='';
     });
 
+
+    document.getElementById('screenRecordUpload')?.addEventListener('change', e => {
+      const f = e.target.files?.[0];
+      if (!f) return;
+
+      window.screenRecordingBlob = f;
+      window.recordedAudioBlob = f;
+      window.remoteAudioUrl = '';
+
+      const playBtn = document.getElementById('playAudioBtn');
+      if (playBtn) {
+        playBtn.style.display = 'block';
+        playBtn.textContent = '▶ 화면녹화 소리';
+      }
+
+      const mb = (f.size / (1024 * 1024)).toFixed(1);
+      window.showToast(`📱 화면녹화 적용 · ${mb}MB · 재생으로 확인하세요`);
+      e.target.value = '';
+    });
+
 document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
       const f=e.target.files[0];
       if(!f)return;
@@ -1088,6 +1116,10 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
       }
       return true;
     }
+
+    // ---------- 화면녹화 오디오 가져오기 ----------
+    // MP4/MOV/WebM 파일에서 브라우저가 지원하는 오디오 트랙을 직접 재생한다.
+    // 별도 재인코딩 없이 원본 컨테이너를 사용한다.
 
     // ---------- 녹음 v2.0.2 : Direct / Maximum Compatibility ----------
     // Web Audio 가공을 거치지 않고 마이크 스트림을 MediaRecorder에 직접 연결한다.
@@ -1308,7 +1340,7 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
         };
         currentAudio.onerror = () => {
           console.error('audio element error:', currentAudio.error);
-          window.showToast('❌ 이 녹음 형식을 재생할 수 없습니다');
+          window.showToast('❌ 이 파일의 소리 형식을 재생할 수 없습니다 · MP4/AAC 권장');
         };
       } catch (err) {
         console.error('Recorded audio playback failed:', err);
