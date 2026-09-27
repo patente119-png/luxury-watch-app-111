@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Luxury Smartwatch - Standard Edition v2.0.2 Direct Audio Fix</title>
+  <title>Luxury Smartwatch - Standard Edition v2.0.4 Voice Music Recording Modes</title>
   <link rel="preconnect" href="https://fonts.googleapis.com/">
   <link rel="preconnect" href="https://fonts.gstatic.com/" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Inter:wght@400;600;800;900&family=JetBrains+Mono:wght@500;700&family=Nanum+Myeongjo:wght@700;800&family=Noto+Sans+KR:wght@400;700;900&family=Noto+Serif+KR:wght@400;700;900&display=swap" rel="stylesheet">
@@ -258,7 +258,21 @@
       }
     };
 
-    window.addEventListener('DOMContentLoaded', async () => {
+    
+    window.addEventListener('DOMContentLoaded', () => {
+      if (location.protocol === 'file:') {
+        setTimeout(() => {
+          window.showToast?.('ℹ️ 직접 연 파일입니다 · 녹음은 Vercel 또는 Live Server에서 테스트하세요');
+        }, 700);
+
+        const btn = document.getElementById('recordBtn');
+        if (btn) {
+          btn.title = '녹음은 HTTPS(Vercel) 또는 localhost(Live Server)에서 가능합니다';
+        }
+      }
+    });
+
+window.addEventListener('DOMContentLoaded', async () => {
       const queryId = new URLSearchParams(location.search).get('id');
       const hashParams = new URLSearchParams((location.hash || '').replace(/^#/, ''));
       const docId = queryId || hashParams.get('id');
@@ -645,6 +659,13 @@
                   </div>
 
                   <div id="soundPanel" class="control-panel" style="left:159px;top:40px" hidden>
+                    <select id="recordModeSelect" class="style-select" title="녹음 모드">
+                      <option value="voice" selected>🎙 목소리 녹음</option>
+                      <option value="music">🎵 음악 녹음</option>
+                    </select>
+                    <div id="recordModeHint" style="font-size:9px;line-height:1.25;color:#cbd5e1;text-align:center;padding:2px 1px;">
+                      목소리: 잡음제거 ON
+                    </div>
                     <button type="button" id="recordBtn" class="btn-custom btn-action-record" onclick="toggleRecording()">🎙 녹음</button>
                     <label for="voiceFileUpload" class="btn-custom">🎧 음성파일</label>
                     <input type="file" id="voiceFileUpload" accept="audio/*,.mp3,.m4a,.wav,.webm,.ogg" style="display:none">
@@ -1031,6 +1052,43 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
       window.showToast('🕰️ 시·분·초침 이미지 적용');
     });
 
+
+
+    window.addEventListener('DOMContentLoaded', () => {
+      const mode = document.getElementById('recordModeSelect');
+      const hint = document.getElementById('recordModeHint');
+      if (!mode || !hint) return;
+
+      const refreshRecordingModeHint = () => {
+        if (mode.value === 'music') {
+          hint.textContent = '음악: 잡음제거 OFF · 볼륨 60~75% 권장';
+        } else {
+          hint.textContent = '목소리: 잡음제거 ON';
+        }
+      };
+
+      mode.addEventListener('change', refreshRecordingModeHint);
+      refreshRecordingModeHint();
+    });
+
+    function isMicEnvironmentAvailable() {
+      const isLocalhost = ['localhost','127.0.0.1','::1'].includes(location.hostname);
+      const isHttps = location.protocol === 'https:';
+      return isLocalhost || isHttps;
+    }
+
+    function explainMicEnvironment() {
+      if (location.protocol === 'file:') {
+        window.showToast('🎙 녹음은 Vercel(HTTPS) 또는 Live Server에서 사용하세요');
+        return false;
+      }
+      if (!isMicEnvironmentAvailable()) {
+        window.showToast('🎙 녹음은 HTTPS 또는 localhost에서만 가능합니다');
+        return false;
+      }
+      return true;
+    }
+
     // ---------- 녹음 v2.0.2 : Direct / Maximum Compatibility ----------
     // Web Audio 가공을 거치지 않고 마이크 스트림을 MediaRecorder에 직접 연결한다.
     // Chrome / Edge / Android / Safari 계열에서 재생 호환성을 우선한다.
@@ -1083,6 +1141,10 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
     async function toggleRecording() {
       const recordBtn = document.getElementById('recordBtn');
 
+      if (!explainMicEnvironment()) {
+        return;
+      }
+
       if (mediaRecorder && mediaRecorder.state === 'recording') {
         recordBtn.disabled = true;
         recordBtn.textContent = '처리 중...';
@@ -1102,13 +1164,26 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
         window.remoteAudioUrl = '';
         audioChunks = [];
 
+        const recordMode = document.getElementById('recordModeSelect')?.value || 'voice';
+
+        const audioConstraints = recordMode === 'music'
+          ? {
+              echoCancellation: false,
+              noiseSuppression: false,
+              autoGainControl: false,
+              channelCount: { ideal: 2 },
+              sampleRate: { ideal: 48000 }
+            }
+          : {
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true,
+              channelCount: 1,
+              sampleRate: { ideal: 48000 }
+            };
+
         recordingSourceStream = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true,
-            channelCount: 1
-          }
+          audio: audioConstraints
         });
 
         const opts = getBestRecordingOptions();
@@ -1158,7 +1233,8 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
           }
 
           const kb = Math.max(1, Math.round(blob.size / 1024));
-          window.showToast(`✅ 녹음 완료 · ${kb}KB · 재생 버튼을 누르세요`);
+          const finishedMode = document.getElementById('recordModeSelect')?.value || 'voice';
+          window.showToast(`✅ ${finishedMode === 'music' ? '음악' : '목소리'} 녹음 완료 · ${kb}KB · 재생 버튼을 누르세요`);
         };
 
         // timeslice 없이 녹음하여 마지막 파일 헤더/메타데이터 호환성을 높임
@@ -1167,7 +1243,10 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
         recordBtn.disabled = false;
         recordBtn.classList.add('recording');
         recordBtn.textContent = '■ 녹음 중지';
-        window.showToast('🔴 녹음 중입니다');
+        const activeMode = document.getElementById('recordModeSelect')?.value || 'voice';
+        window.showToast(activeMode === 'music'
+          ? '🎵 음악 녹음 중 · 다른 휴대폰과 20~40cm 거리 권장'
+          : '🔴 목소리 녹음 중입니다');
 
       } catch (err) {
         console.error('Mic start error:', err);
@@ -1177,7 +1256,7 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
         recordBtn.textContent = '🎙 녹음';
 
         if (err?.name === 'NotAllowedError' || err?.name === 'SecurityError') {
-          window.showToast('❌ 마이크 권한을 허용해주세요');
+          window.showToast('❌ 브라우저 사이트 설정에서 마이크를 허용해주세요');
         } else {
           window.showToast('❌ 마이크 시작 실패');
         }
