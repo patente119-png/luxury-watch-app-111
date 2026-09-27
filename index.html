@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Luxury Smartwatch - Standard Edition v2.0.5 Screen Recording Audio Import</title>
+  <title>Luxury Smartwatch - Standard Edition v2.0.6 Copyright Safety</title>
   <link rel="preconnect" href="https://fonts.googleapis.com/">
   <link rel="preconnect" href="https://fonts.gstatic.com/" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Inter:wght@400;600;800;900&family=JetBrains+Mono:wght@500;700&family=Nanum+Myeongjo:wght@700;800&family=Noto+Sans+KR:wght@400;700;900&family=Noto+Serif+KR:wght@400;700;900&display=swap" rel="stylesheet">
@@ -104,6 +104,7 @@
     }
 
     window.saveToFirestoreAndShare = async function(mode = 'normal') {
+      if (window.recordedAudioBlob && !hasCopyrightConsent()) { window.showToast('⚠️ 미디어 사용 권리 확인 후 공유할 수 있습니다'); openCopyrightGuide(); return; }
       try {
         window.showToast?.('☁️ 클라우드 저장 중...');
 
@@ -576,6 +577,19 @@ window.addEventListener('DOMContentLoaded', async () => {
     
       transform:translateZ(0);}
 
+
+    .copyright-note{font-size:9px;line-height:1.35;color:#cbd5e1;text-align:left;padding:6px 7px;border:1px solid rgba(148,163,184,.45);border-radius:5px;background:rgba(15,23,42,.72);}
+    .copyright-consent{display:flex;gap:6px;align-items:flex-start;font-size:9.5px;line-height:1.35;color:#f8fafc;padding:5px 2px;cursor:pointer;}
+    .copyright-consent input{margin-top:2px;accent-color:#7dd3fc;}
+    .copyright-modal-backdrop{position:fixed;inset:0;z-index:9998;background:rgba(2,6,23,.78);display:none;align-items:center;justify-content:center;padding:18px;}
+    .copyright-modal-backdrop.open{display:flex;}
+    .copyright-modal{width:min(420px,94vw);max-height:82vh;overflow:auto;background:#0f172a;border:1px solid #7dd3fc;border-radius:12px;padding:16px;box-shadow:0 20px 60px rgba(0,0,0,.65);color:#f8fafc;font-family:'Noto Sans KR',sans-serif;}
+    .copyright-modal h3{font-size:16px;margin-bottom:10px;}
+    .copyright-modal p,.copyright-modal li{font-size:12px;line-height:1.55;color:#dbeafe;}
+    .copyright-modal ul{padding-left:18px;margin:8px 0 12px;}
+    .copyright-modal .modal-actions{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;}
+    .copyright-modal .modal-actions button{flex:1;min-width:120px;}
+
     .relay-badge{
       position:absolute; left:50%; bottom:132px; transform:translateX(-50%);
       z-index:34; background:rgba(10,14,22,.78);
@@ -673,9 +687,15 @@ window.addEventListener('DOMContentLoaded', async () => {
                     <input type="file" id="voiceFileUpload" accept="audio/*,.mp3,.m4a,.wav,.webm,.ogg" style="display:none">
                     <label for="screenRecordUpload" class="btn-custom">📱 화면녹화</label>
                     <input type="file" id="screenRecordUpload" accept="video/mp4,video/*,.mp4,.mov,.m4v,.webm" style="display:none">
-                    <div style="font-size:9px;line-height:1.25;color:#cbd5e1;text-align:center;padding:2px 1px;">
-                      화면녹화 영상의 소리 트랙을 재생음으로 사용
+                    <div class="copyright-note">
+                      직접 제작했거나 사용 허가를 받은 음원·영상만 사용하세요. 상업 음원 전체곡을 녹음·업로드·공유하는 용도는 권장하지 않습니다.
                     </div>
+                    <label class="copyright-consent" for="copyrightConsent">
+                      <input type="checkbox" id="copyrightConsent">
+                      <span>이 미디어를 사용할 권리가 있음을 확인합니다.</span>
+                    </label>
+                    <button type="button" class="btn-custom" onclick="openCopyrightGuide()">ⓘ 저작권 안내</button>
+                    <button type="button" class="btn-custom" onclick="openCopyrightReport()">⚑ 신고·삭제 요청</button>
                     <button type="button" id="playAudioBtn" class="btn-custom" onclick="playRecordedAudio()" style="display:none;background:rgba(236,72,153,.9);color:#fff;font-weight:800">▶ 녹음 재생</button>
                     <select id="chimeSelect" class="chime-select" title="정시알림음 선택">
                       <option value="rooster" selected>🐓 닭소리</option>
@@ -1034,6 +1054,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     });
     
     document.getElementById('voiceFileUpload')?.addEventListener('change',e=>{
+      if(!requireCopyrightConsent()){ e.target.value=''; return; }
       const f=e.target.files?.[0];
       if(!f)return;
       window.recordedAudioBlob=f;
@@ -1049,6 +1070,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 
 
     document.getElementById('screenRecordUpload')?.addEventListener('change', e => {
+      if(!requireCopyrightConsent()){ e.target.value=''; return; }
       const f = e.target.files?.[0];
       if (!f) return;
 
@@ -1097,6 +1119,73 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
 
       mode.addEventListener('change', refreshRecordingModeHint);
       refreshRecordingModeHint();
+    });
+
+
+    const COPYRIGHT_CONSENT_KEY = 'LuxuryWatchCopyrightConsentV1';
+    const COPYRIGHT_CONTACT_EMAIL = ''; // 출시 전 운영자 신고 이메일을 넣으세요.
+
+    function hasCopyrightConsent(){ return localStorage.getItem(COPYRIGHT_CONSENT_KEY) === 'yes'; }
+    function syncCopyrightConsentUI(){ const box=document.getElementById('copyrightConsent'); if(box) box.checked=hasCopyrightConsent(); }
+    function requireCopyrightConsent(){
+      const box=document.getElementById('copyrightConsent');
+      if(hasCopyrightConsent() || box?.checked){
+        localStorage.setItem(COPYRIGHT_CONSENT_KEY,'yes');
+        if(box) box.checked=true;
+        return true;
+      }
+      window.showToast('⚠️ 먼저 미디어 사용 권리 확인에 동의해주세요');
+      openCopyrightGuide();
+      return false;
+    }
+    function openCopyrightModal(title, bodyHtml){
+      const backdrop=document.getElementById('copyrightModalBackdrop');
+      const titleEl=document.getElementById('copyrightModalTitle');
+      const bodyEl=document.getElementById('copyrightModalBody');
+      if(!backdrop||!titleEl||!bodyEl)return;
+      titleEl.textContent=title; bodyEl.innerHTML=bodyHtml; backdrop.classList.add('open');
+    }
+    function closeCopyrightModal(){ document.getElementById('copyrightModalBackdrop')?.classList.remove('open'); }
+    window.closeCopyrightModal=closeCopyrightModal;
+    function openCopyrightGuide(){
+      openCopyrightModal('저작권 및 미디어 사용 안내', `
+        <p>이 앱에는 본인 제작물 또는 적법하게 사용할 권한이 있는 미디어만 올려주세요.</p>
+        <ul>
+          <li>본인이 직접 녹음한 목소리·자작음원: 사용 가능</li>
+          <li>정식 라이선스를 받은 음원·영상: 허용 범위 안에서 사용</li>
+          <li>상업 음원 전체곡을 녹음하거나 화면녹화해 공유: 권리 침해 가능성이 있어 권장하지 않음</li>
+        </ul>
+        <p>동의 체크는 저작권이 자동으로 해결된다는 의미가 아니라, 업로드할 권한이 있음을 사용자가 확인하는 절차입니다.</p>
+      `);
+    }
+    window.openCopyrightGuide=openCopyrightGuide;
+    function openCopyrightReport(){
+      const watchId=new URLSearchParams(location.search).get('id')||window.__openedWatchId||'(기본 화면)';
+      const reportText=`Luxury Smartwatch 저작권/삭제 요청\nWatch ID: ${watchId}\n페이지: ${location.href}\n요청 내용: `;
+      const contactLine=COPYRIGHT_CONTACT_EMAIL
+        ? `<p>신고 이메일: <b>${COPYRIGHT_CONTACT_EMAIL}</b></p>`
+        : `<p style="color:#fbbf24">운영자 신고 이메일이 아직 설정되지 않았습니다.</p>`;
+      openCopyrightModal('신고·삭제 요청', `
+        <p>문제가 되는 공유본의 Watch ID와 링크를 운영자에게 보내 삭제 또는 차단을 요청할 수 있습니다.</p>
+        ${contactLine}
+        <p style="margin-top:8px"><b>현재 Watch ID</b><br>${watchId}</p>
+        <div class="modal-actions"><button type="button" class="btn-custom" id="copyCopyrightReportBtn">요청정보 복사</button></div>
+      `);
+      setTimeout(()=>{
+        document.getElementById('copyCopyrightReportBtn')?.addEventListener('click',async()=>{
+          try{ await navigator.clipboard.writeText(reportText); window.showToast('📋 신고·삭제 요청정보 복사 완료'); }
+          catch(_){ prompt('아래 내용을 복사하세요:',reportText); }
+        },{once:true});
+      },0);
+    }
+    window.openCopyrightReport=openCopyrightReport;
+    window.addEventListener('DOMContentLoaded',()=>{
+      syncCopyrightConsentUI();
+      document.getElementById('copyrightConsent')?.addEventListener('change',e=>{
+        if(e.target.checked){ localStorage.setItem(COPYRIGHT_CONSENT_KEY,'yes'); window.showToast('✅ 미디어 사용 권리 확인 저장'); }
+        else localStorage.removeItem(COPYRIGHT_CONSENT_KEY);
+      });
+      document.getElementById('copyrightModalBackdrop')?.addEventListener('click',e=>{ if(e.target.id==='copyrightModalBackdrop') closeCopyrightModal(); });
     });
 
     function isMicEnvironmentAvailable() {
@@ -1733,5 +1822,16 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
     }
     requestAnimationFrame(tickWatch);
   </script>
+
+  <div id="copyrightModalBackdrop" class="copyright-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="copyrightModalTitle">
+    <div class="copyright-modal">
+      <h3 id="copyrightModalTitle">저작권 및 미디어 사용 안내</h3>
+      <div id="copyrightModalBody"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn-custom" onclick="closeCopyrightModal()">닫기</button>
+      </div>
+    </div>
+  </div>
+
 </body>
 </html>
