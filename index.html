@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Luxury Smartwatch - Standard Edition v2.0.7 Launch UI</title>
+  <title>Luxury Smartwatch - Standard Edition v2.0.8 Draggable UI</title>
   <link rel="preconnect" href="https://fonts.googleapis.com/">
   <link rel="preconnect" href="https://fonts.gstatic.com/" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Inter:wght@400;600;800;900&family=JetBrains+Mono:wght@500;700&family=Nanum+Myeongjo:wght@700;800&family=Noto+Sans+KR:wght@400;700;900&family=Noto+Serif+KR:wght@400;700;900&display=swap" rel="stylesheet">
@@ -48,7 +48,7 @@
     window.currentRelayHistory = [];
     window.relayCompleted = false;
 
-    const SCHEMA_VERSION = 6;
+    const SCHEMA_VERSION = 7;
 
     function newWatchId() {
       if (window.crypto?.getRandomValues) {
@@ -98,6 +98,7 @@
         relayHistory: Array.isArray(raw.relayHistory) ? raw.relayHistory : [],
         relayCompleted: !!raw.relayCompleted,
         parentId: raw.parentId || null,
+        uiPositions: raw.uiPositions && typeof raw.uiPositions === 'object' ? raw.uiPositions : null,
         createdAt: raw.createdAt || '',
         updatedAt: raw.updatedAt || ''
       };
@@ -195,6 +196,7 @@
           relayHistory,
           relayCompleted: mode === 'complete' ? true : !!window.relayCompleted,
           parentId: sourceId,
+          uiPositions: window.getCurrentUIPositions?.() || null,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
 
@@ -428,7 +430,10 @@ window.addEventListener('DOMContentLoaded', async () => {
       justify-content:center;
       outline:none;
       line-height:1;
+      touch-action:none;
+      cursor:grab;
     }
+    .btn-menu-main:active { cursor:grabbing; }
     .btn-menu-main:hover,
     .btn-menu-main.opened {
       border-color:var(--ui-accent);
@@ -509,7 +514,10 @@ window.addEventListener('DOMContentLoaded', async () => {
       box-shadow:inset 0 2px 8px rgba(0,0,0,.7),0 0 14px rgba(125,211,252,.12),0 6px 16px rgba(0,0,0,.6);
       z-index:10;
       border-radius:6px;
+      touch-action:none;
+      cursor:grab;
     }
+    .calendar-window.dragging { cursor:grabbing; }
     .cal-year-month { font-size:13px; font-weight:800; color:var(--ui-text); letter-spacing:1.2px; }
     .cal-divider { width:1.5px; height:16px; background:var(--ui-border); }
     .cal-day-date { display:flex; align-items:center; gap:6px; }
@@ -986,6 +994,9 @@ window.addEventListener('DOMContentLoaded', async () => {
           if(el) el.src=window.remoteMeteorUrl;
         });
       }
+      if(data.uiPositions){
+        window.applyUIPositions?.(data.uiPositions,true);
+      }
     };
 
     // ---------- IndexedDB ----------
@@ -1011,6 +1022,7 @@ window.addEventListener('DOMContentLoaded', async () => {
           relayCount:Number(window.currentRelayCount||0),
           relayHistory:Array.isArray(window.currentRelayHistory)?window.currentRelayHistory:[],
           relayCompleted:!!window.relayCompleted,
+          uiPositions:window.getCurrentUIPositions?.()||null,
           savedAt:new Date().toISOString()
         }));
         if(window.recordedAudioBlob) await dbPut('audio',window.recordedAudioBlob);
@@ -1033,6 +1045,7 @@ window.addEventListener('DOMContentLoaded', async () => {
           window.currentRelayCount=Number(s.relayCount||0);
           window.currentRelayHistory=Array.isArray(s.relayHistory)?s.relayHistory:[];
           window.relayCompleted=!!s.relayCompleted;
+          if(s.uiPositions) window.applyUIPositions?.(s.uiPositions,false);
           window.updateRelayBadge?.();
         }
         const audio=await dbGet('audio'); if(audio){window.recordedAudioBlob=audio; const b=document.getElementById('playAudioBtn'); b.style.display='block'; b.textContent='▶ 재생음';}
@@ -1794,8 +1807,117 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
       playHourlyChime();
     }
 
+    // ---------- 상단 UI 위치 이동 ----------
+    const UI_POSITIONS_KEY='LuxuryWatchUIPositionsV1';
+
+    function clamp(v,min,max){ return Math.max(min,Math.min(max,v)); }
+
+    function setElementPosition(el,left,top){
+      if(!el) return;
+      el.style.left=`${Math.round(left)}px`;
+      el.style.top=`${Math.round(top)}px`;
+      el.style.right='auto';
+      el.style.bottom='auto';
+      el.style.transform='none';
+    }
+
+    function readPositionWithinDial(el){
+      const dial=document.getElementById('dialSunray');
+      if(!dial||!el) return null;
+      const d=dial.getBoundingClientRect();
+      const r=el.getBoundingClientRect();
+      return {left:Math.round(r.left-d.left),top:Math.round(r.top-d.top)};
+    }
+
+    window.getCurrentUIPositions=function(){
+      return {
+        settings:readPositionWithinDial(document.querySelector('.top-controls')),
+        widget:readPositionWithinDial(document.querySelector('.calendar-window'))
+      };
+    };
+
+    window.applyUIPositions=function(pos,saveLocal=false){
+      if(!pos) return;
+      const settings=document.querySelector('.top-controls');
+      const widget=document.querySelector('.calendar-window');
+      if(pos.settings && Number.isFinite(Number(pos.settings.left)) && Number.isFinite(Number(pos.settings.top))){
+        setElementPosition(settings,Number(pos.settings.left),Number(pos.settings.top));
+      }
+      if(pos.widget && Number.isFinite(Number(pos.widget.left)) && Number.isFinite(Number(pos.widget.top))){
+        setElementPosition(widget,Number(pos.widget.left),Number(pos.widget.top));
+      }
+      if(saveLocal){
+        try{ localStorage.setItem(UI_POSITIONS_KEY,JSON.stringify(window.getCurrentUIPositions())); }catch(_){ }
+      }
+    };
+
+    function saveUIPositionsLocal(){
+      try{ localStorage.setItem(UI_POSITIONS_KEY,JSON.stringify(window.getCurrentUIPositions())); }catch(_){ }
+    }
+
+    function restoreUIPositionsLocal(){
+      try{
+        const raw=localStorage.getItem(UI_POSITIONS_KEY);
+        if(raw) window.applyUIPositions(JSON.parse(raw),false);
+      }catch(_){ }
+    }
+
+    function makeDraggable(handle,target,{isMenu=false}={}){
+      if(!handle||!target) return;
+      let active=false,startX=0,startY=0,startLeft=0,startTop=0,moved=false,pointerId=null;
+      handle.addEventListener('pointerdown',e=>{
+        if(e.button!==undefined && e.button!==0) return;
+        const dial=document.getElementById('dialSunray');
+        if(!dial) return;
+        const d=dial.getBoundingClientRect();
+        const t=target.getBoundingClientRect();
+        active=true; moved=false; pointerId=e.pointerId;
+        startX=e.clientX; startY=e.clientY;
+        startLeft=t.left-d.left; startTop=t.top-d.top;
+        try{ handle.setPointerCapture(pointerId); }catch(_){ }
+        if(target.classList.contains('calendar-window')) target.classList.add('dragging');
+      },{passive:true});
+      handle.addEventListener('pointermove',e=>{
+        if(!active || e.pointerId!==pointerId) return;
+        const dx=e.clientX-startX, dy=e.clientY-startY;
+        if(Math.hypot(dx,dy)>5) moved=true;
+        if(!moved) return;
+        e.preventDefault();
+        const dial=document.getElementById('dialSunray');
+        if(!dial) return;
+        const d=dial.getBoundingClientRect();
+        const h=handle.getBoundingClientRect();
+        const maxLeft=Math.max(0,d.width-h.width);
+        const maxTop=Math.max(0,d.height-h.height);
+        setElementPosition(target,clamp(startLeft+dx,0,maxLeft),clamp(startTop+dy,0,maxTop));
+      },{passive:false});
+      const finish=e=>{
+        if(!active || (e.pointerId!==undefined && e.pointerId!==pointerId)) return;
+        active=false;
+        try{ handle.releasePointerCapture(pointerId); }catch(_){ }
+        target.classList.remove('dragging');
+        if(moved){
+          if(isMenu) window.__suppressMenuClickUntil=Date.now()+300;
+          saveUIPositionsLocal();
+          window.showToast?.('📌 위치 저장');
+        }
+        pointerId=null;
+      };
+      handle.addEventListener('pointerup',finish);
+      handle.addEventListener('pointercancel',finish);
+    }
+
+    window.addEventListener('DOMContentLoaded',()=>{
+      requestAnimationFrame(()=>{
+        restoreUIPositionsLocal();
+        makeDraggable(document.getElementById('mainMenuBtn'),document.querySelector('.top-controls'),{isMenu:true});
+        makeDraggable(document.querySelector('.calendar-window'),document.querySelector('.calendar-window'));
+      });
+    });
+
     // ---------- 메뉴 ----------
     function toggleControlPanel(panelId,event){
+      if(window.__suppressMenuClickUntil && Date.now()<window.__suppressMenuClickUntil){ event?.preventDefault(); event?.stopPropagation(); return; }
       event?.stopPropagation();
       const target=document.getElementById(panelId);
       const btn=document.getElementById('mainMenuBtn');
