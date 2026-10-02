@@ -1,0 +1,3219 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <title>TIME RELAY - 이어쓰는 시계편지 v2.8.1</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com/">
+  <link rel="preconnect" href="https://fonts.gstatic.com/" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Inter:wght@400;600;800;900&family=JetBrains+Mono:wght@500;700&family=Nanum+Myeongjo:wght@700;800&family=Noto+Sans+KR:wght@400;700;900&family=Noto+Serif+KR:wght@400;700;900&display=swap" rel="stylesheet">
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+    import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+    import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-storage.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyBcADvduLSCtHSeXajTB-IGLmF9iGu8sYc",
+      authDomain: "luxury-watch-app-111.firebaseapp.com",
+      projectId: "luxury-watch-app-111",
+      storageBucket: "luxury-watch-app-111.firebasestorage.app",
+      messagingSenderId: "46725089963",
+      appId: "1:46725089963:web:9816f9acd7c4f9a6acc5ee",
+      measurementId: "G-LDJT8YZKF1"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    const storage = getStorage(app);
+
+    window.recordedAudioBlob = null;
+    window.remoteAudioUrl = '';
+    window.screenRecordingBlob = null;
+    window.aiNarratorBlob = null;
+    window.remoteNarratorAudioUrl = '';
+    window.aiNarratorObjectUrl = '';
+    window.customBackgroundBlob = null;
+    window.backgroundPlaylistBlobs = [];
+    window.backgroundPlaylist = [];
+    window.backgroundRotationTimer = null;
+    window.backgroundRotationIndex = 0;
+    window.backgroundRotationSeconds = 15;
+    window.customBackgroundType = '';
+    window.remoteBackgroundUrl = '';
+    window.remoteBackgroundType = '';
+    window.customMeteorBlob = null;
+    window.remoteMeteorUrl = '';
+    window.currentRelayCount = 0;
+    window.currentRelayHistory = [];
+    window.relayCompleted = false;
+    window.storyScenes = [];
+    window.storyPlaybackTimer = null;
+    window.storyPlaybackAudio = null;
+    window.storyPlaybackIndex = -1;
+
+    const SCHEMA_VERSION = 8;
+
+    function newWatchId() {
+      if (window.crypto?.getRandomValues) {
+        const a = new Uint32Array(2);
+        crypto.getRandomValues(a);
+        return 'watch_' + Array.from(a).map(v => v.toString(36)).join('').slice(0, 12);
+      }
+      return 'watch_' + Math.random().toString(36).slice(2, 12);
+    }
+
+    function extFromBlob(blob, fallback = 'bin') {
+      const type = blob?.type || '';
+      if (type.includes('webm')) return 'webm';
+      if (type.includes('mp4')) return 'mp4';
+      if (type.includes('mpeg')) return 'mp3';
+      if (type.includes('png')) return 'png';
+      if (type.includes('jpeg')) return 'jpg';
+      if (type.includes('webp')) return 'webp';
+      if (type.includes('gif')) return 'gif';
+      return fallback;
+    }
+
+    async function uploadBlob(path, blob) {
+      const fileRef = ref(storage, path);
+      await uploadBytes(fileRef, blob, { contentType: blob.type || 'application/octet-stream' });
+      return await getDownloadURL(fileRef);
+    }
+
+    function normalizeWatchData(raw) {
+      if (!raw) return null;
+      return {
+        schemaVersion: raw.schemaVersion || raw.version || 0,
+        text: raw.text ?? raw.t ?? '',
+        fontFamily: raw.fontFamily ?? raw.ff ?? "'Noto Sans KR', sans-serif",
+        fontSize: raw.fontSize ?? raw.fs ?? '13px',
+        textColor: raw.textColor ?? raw.tc ?? '#fbcfe8',
+        chime: raw.chime ?? raw.ch ?? 'none',
+        narrator: raw.narrator ?? 'female',
+        narratorAudioUrl: raw.narratorAudioUrl || '',
+        audioUrl: raw.audioUrl || '',
+        backgroundUrl: raw.backgroundUrl || '',
+        backgroundType: raw.backgroundType || '',
+        backgroundPlaylist: Array.isArray(raw.backgroundPlaylist) ? raw.backgroundPlaylist : [],
+        backgroundRotationSeconds: Number(raw.backgroundRotationSeconds || 15),
+        meteorUrl: raw.meteorUrl || '',
+        relayCount: Number(raw.relayCount || 0),
+        relayHistory: Array.isArray(raw.relayHistory) ? raw.relayHistory : [],
+        relayCompleted: !!raw.relayCompleted,
+        parentId: raw.parentId || null,
+        uiPositions: raw.uiPositions && typeof raw.uiPositions === 'object' ? raw.uiPositions : null,
+        storyScenes: Array.isArray(raw.storyScenes) ? raw.storyScenes : [],
+        storyEmotion: raw.storyEmotion || 'memory',
+        storyTimeTag: raw.storyTimeTag || 'now',
+        createdAt: raw.createdAt || '',
+        updatedAt: raw.updatedAt || ''
+      };
+    }
+
+    window.saveToFirestoreAndShare = async function(mode = 'normal') {
+      window.ensureCurrentSceneCaptured?.();
+      if (window.recordedAudioBlob && !hasCopyrightConsent()) { window.showToast('⚠️ 미디어 사용 권리 확인 후 공유할 수 있습니다'); openCopyrightGuide(); return; }
+      try {
+        window.showToast?.('☁️ 클라우드 저장 중...');
+
+        const sourceId = new URLSearchParams(location.search).get('id') || null;
+        const docId = newWatchId(); // 항상 새 링크 생성
+
+        const isRelay = mode === 'relay';
+        const nextRelayCount = isRelay
+          ? Math.max(1, Number(window.currentRelayCount || 0) + 1)
+          : Number(window.currentRelayCount || 0);
+
+        const baseRelayHistory = Array.isArray(window.currentRelayHistory)
+          ? [...window.currentRelayHistory]
+          : [];
+
+        const relayHistory = isRelay
+          ? [...baseRelayHistory, {
+              step: nextRelayCount,
+              fromWatchId: sourceId || null,
+              createdAt: new Date().toISOString()
+            }].slice(-30)
+          : baseRelayHistory.slice(-30);
+
+        let audioUrl = window.remoteAudioUrl || '';
+        let narratorAudioUrl = window.remoteNarratorAudioUrl || '';
+        let backgroundUrl = window.remoteBackgroundUrl || '';
+        let backgroundType = window.remoteBackgroundType || '';
+        let meteorUrl = window.remoteMeteorUrl || '';
+
+        // 새 녹음이 있으면 최신 음성 1개로 교체
+        if (window.recordedAudioBlob) {
+          const isScreenRecording = (window.recordedAudioBlob.type || '').startsWith('video/');
+          window.showToast?.(isScreenRecording ? '📱 화면녹화 소리 업로드 중...' : '🎙️ 음성 업로드 중...');
+          const ext = extFromBlob(window.recordedAudioBlob, isScreenRecording ? 'mp4' : 'webm');
+          audioUrl = await uploadBlob(`audio_letters/${docId}.${ext}`, window.recordedAudioBlob);
+        }
+
+        // AI 내레이터가 새로 생성되었으면 MP3를 Storage에 저장
+        if (window.aiNarratorBlob) {
+          window.showToast?.('😊 AI 내레이터 음성 업로드 중...');
+          narratorAudioUrl = await uploadBlob(`narrators/${docId}.mp3`, window.aiNarratorBlob);
+        }
+
+        let backgroundPlaylist = Array.isArray(window.backgroundPlaylist) ? [...window.backgroundPlaylist] : [];
+
+        if (Array.isArray(window.backgroundPlaylistBlobs) && window.backgroundPlaylistBlobs.length) {
+          window.showToast?.('🌌 배경 묶음 업로드 중...');
+          backgroundPlaylist = [];
+          for (let i = 0; i < window.backgroundPlaylistBlobs.length; i++) {
+            const item = window.backgroundPlaylistBlobs[i];
+            const ext = extFromBlob(item.blob, item.type === 'video' ? 'mp4' : 'jpg');
+            const url = await uploadBlob(`backgrounds/${docId}_${i}.${ext}`, item.blob);
+            backgroundPlaylist.push({ url, type: item.type });
+          }
+          if (backgroundPlaylist[0]) {
+            backgroundUrl = backgroundPlaylist[0].url;
+            backgroundType = backgroundPlaylist[0].type;
+          }
+        } else if (window.customBackgroundBlob) {
+          window.showToast?.('🌌 배경 업로드 중...');
+          const ext = extFromBlob(window.customBackgroundBlob, window.customBackgroundType === 'video' ? 'mp4' : 'jpg');
+          backgroundUrl = await uploadBlob(`backgrounds/${docId}.${ext}`, window.customBackgroundBlob);
+          backgroundType = window.customBackgroundType;
+        }
+
+        if (window.customMeteorBlob) {
+          window.showToast?.('✨ 초침 이미지 업로드 중...');
+          const ext = extFromBlob(window.customMeteorBlob, 'png');
+          meteorUrl = await uploadBlob(`meteorites/${docId}.${ext}`, window.customMeteorBlob);
+        }
+
+        // 장면 데이터는 기존 배경/소리 기능을 복제하지 않고,
+        // 각 장면이 어느 배경과 어떤 음성을 사용했는지만 연결한다.
+        let storyScenes = Array.isArray(window.storyScenes)
+          ? window.storyScenes.map(scene => ({...scene}))
+          : [];
+        if (storyScenes.length && audioUrl) {
+          const last = storyScenes[storyScenes.length - 1];
+          if (last?.hasAudio && !last.audioUrl) {
+            last.audioUrl = audioUrl;
+          }
+        }
+
+        const watchPackage = {
+          schemaVersion: SCHEMA_VERSION,
+          text: document.getElementById('dialContentInput').value,
+          fontFamily: document.getElementById('fontFamilySelect').value,
+          fontSize: document.getElementById('fontSizeSelect').value,
+          textColor: document.getElementById('textColorPicker').value,
+          chime: (document.getElementById('chimeSelect')?.value||'none'),
+          narrator: document.getElementById('narratorSelect')?.value || 'female',
+          narratorAudioUrl,
+          audioUrl,
+          backgroundUrl,
+          backgroundType,
+          backgroundPlaylist,
+          backgroundRotationSeconds: Number(document.getElementById('backgroundIntervalSelect')?.value || window.backgroundRotationSeconds || 15),
+          meteorUrl,
+          relayCount: nextRelayCount,
+          relayHistory,
+          relayCompleted: mode === 'complete' ? true : !!window.relayCompleted,
+          parentId: sourceId,
+          uiPositions: window.getCurrentUIPositions?.() || null,
+          storyScenes,
+          storyEmotion: document.getElementById('emotionTagSelect')?.value || 'memory',
+          storyTimeTag: document.getElementById('timeTagSelect')?.value || 'now',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+
+          // 구버전 앱과의 역호환 필드
+          t: document.getElementById('dialContentInput').value,
+          ff: document.getElementById('fontFamilySelect').value,
+          fs: document.getElementById('fontSizeSelect').value,
+          tc: document.getElementById('textColorPicker').value,
+          ch: (document.getElementById('chimeSelect')?.value||'none')
+        };
+
+        await setDoc(doc(db, 'watches', docId), watchPackage);
+
+        // 공유 링크는 항상 운영 중인 공식 Vercel 주소를 사용한다.
+        // 중요: 카카오톡이 Web Share API의 별도 url 필드에서 쿼리스트링을
+        // 누락하는 경우를 피하기 위해, 완전한 ?id=... 주소를 본문 text 안에 직접 넣는다.
+        const base = 'https://luxury-watch-app-111.vercel.app/';
+        const shareUrl = `${base}?id=${encodeURIComponent(docId)}`;
+        const userText = watchPackage.text.trim();
+        const relayLine = isRelay ? `\n\n🏃 ${watchPackage.relayCount}번째 릴레이 편지` : '';
+        const shareMessage = `[TIME RELAY · 이어쓰는 시계편지]${relayLine}\n\n${userText}\n\n👉 시계 열기:\n${shareUrl}`;
+        window.__lastShareUrl = shareUrl;
+        window.currentRelayCount = watchPackage.relayCount;
+        window.currentRelayHistory = watchPackage.relayHistory;
+        window.relayCompleted = watchPackage.relayCompleted;
+        window.storyScenes = storyScenes;
+        window.updateRelayBadge?.();
+        window.updateStorySceneUI?.();
+
+        // 방금 저장한 문서를 즉시 다시 읽어, 링크가 실제로 복원 가능한지 확인한다.
+        const verifySnap = await getDoc(doc(db, 'watches', docId));
+        if (!verifySnap.exists()) throw new Error('Saved document verification failed');
+
+        try {
+          if (navigator.share) {
+            await navigator.share({
+              title: 'TIME RELAY · 이어쓰는 시계편지',
+              text: shareMessage
+            });
+            window.showToast?.('💌 전체 링크가 포함된 공유창을 열었습니다');
+            return;
+          }
+        } catch (_) {}
+
+        try {
+          if (navigator.clipboard && window.isSecureContext) {
+            await navigator.clipboard.writeText(shareMessage);
+          } else {
+            const ta = document.createElement('textarea');
+            ta.value = shareMessage;
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            ta.remove();
+          }
+          window.showToast?.('📋 카톡용 링크 복사 완료!');
+        } catch (err) {
+          console.error(err);
+          prompt('아래 내용을 복사하세요:', shareMessage);
+        }
+      } catch (err) {
+        console.error('Cloud Sync Error:', err);
+        window.showToast?.('❌ 클라우드 저장 실패');
+      }
+    };
+
+    
+    window.addEventListener('DOMContentLoaded', () => {
+      const btn = document.getElementById('recordBtn');
+      if (btn) btn.title = '녹음 시작';
+    });
+
+window.addEventListener('DOMContentLoaded', async () => {
+      const queryId = new URLSearchParams(location.search).get('id');
+      const hashParams = new URLSearchParams((location.hash || '').replace(/^#/, ''));
+      const docId = queryId || hashParams.get('id');
+
+      if (!docId) {
+        // 공유 링크라면 반드시 id가 있어야 한다. id가 없으면 상대방의 로컬 상태가
+        // 잘못 표시될 수 있으므로 기본 주소 접속임을 명확히 알린다.
+        await window.restoreLocalState?.();
+        window.showToast?.('ℹ️ 기본 화면입니다 · 공유 링크에는 ?id=watch_...가 필요합니다');
+        return;
+      }
+
+      window.__openedWatchId = docId;
+
+      try {
+        window.showToast?.('📥 편지 불러오는 중...');
+        const snap = await getDoc(doc(db, 'watches', docId));
+        if (!snap.exists()) {
+          window.showToast?.('❌ 존재하지 않는 편지입니다');
+          return;
+        }
+
+        const data = normalizeWatchData(snap.data());
+        window.applyWatchData?.(data);
+        window.showToast?.('💌 이어서 당신의 이야기를 남겨주세요');
+      } catch (err) {
+        console.error('Firestore Load Error:', err);
+        window.showToast?.('❌ 데이터 로드 오류');
+      }
+    });
+  </script>
+
+  <style>
+    :root {
+      --ui-bg: rgba(10, 14, 22, 0.92);
+      --ui-bg-soft: rgba(18, 24, 34, 0.90);
+      --ui-border: #7b8796;
+      --ui-border-strong: #aeb8c5;
+      --ui-accent: #7dd3fc;
+      --ui-accent-soft: rgba(125, 211, 252, 0.16);
+      --ui-text: #f8fafc;
+      --ui-text-soft: #cbd5e1;
+      --ui-shadow: rgba(0,0,0,0.75);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background:#020617; color:#fff; font-family:'Inter',sans-serif; user-select:none; -webkit-user-select:none; }
+    .viewport-wrapper { width:100vw; height:100vh; height:100dvh; display:flex; align-items:center; justify-content:center; overflow:hidden; }
+    .scaler { transform-origin:center; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+    .watch-container { display:flex; flex-direction:column; align-items:center; position:relative; width:380px; }
+    .strap-top,.strap-bottom {
+      border-radius:0 0 22px 22px;
+      align-items:flex-start;
+      border-bottom:1px solid rgba(71,85,105,.48);
+    }
+    .strap-top {
+      border-radius:22px 22px 0 0;
+      align-items:flex-end;
+    }
+    .strap-bottom { border-radius:0 0 30px 30px; align-items:flex-start; border-bottom:1px solid rgba(51,65,85,.6); }
+    .strap-gradient { width:100%; height:28px; background:linear-gradient(to bottom,transparent,rgba(0,0,0,.8)); }
+    .strap-gradient-bottom { width:100%; height:28px; background:linear-gradient(to top,transparent,rgba(0,0,0,.8)); }
+    .watch-case-row {
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      margin:-4px 0;
+      z-index:10;
+      position:relative;
+      width:100%;
+    }
+    .titanium-frame {
+      width:380px;
+      height:440px;
+      border-radius:72px;
+      padding:5px;
+      background:linear-gradient(145deg,#eef2f7 0%,#cbd5e1 22%,#8f9aaa 52%,#dfe6ee 78%,#f8fafc 100%);
+      box-shadow:
+        0 28px 65px -14px rgba(0,0,0,.95),
+        0 0 28px rgba(255,255,255,.10),
+        inset 0 1.5px 1.5px rgba(255,255,255,.85),
+        inset 0 -2px 3px rgba(0,0,0,.55);
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      position:relative;
+      flex-shrink:0;
+    }
+    .dial-viewport {
+      width:100%;
+      height:100%;
+      border-radius:66px;
+      background:#000;
+      position:relative;
+      overflow:hidden;
+      box-shadow:
+        inset 0 0 0 1px rgba(255,255,255,.28),
+        inset 0 10px 20px rgba(255,255,255,.08),
+        inset 0 -12px 22px rgba(0,0,0,.72);
+      isolation:isolate;
+      transform:translateZ(0);
+    }
+    .dial-sunray { width:100%; height:100%; position:relative; overflow:hidden; }
+    .background-layer {
+      position:absolute; inset:0; z-index:1; overflow:hidden; background:#000; isolation:isolate;
+    }
+    .bg-media-element {
+      position:absolute; inset:0; width:100%; height:100%; object-fit:cover; pointer-events:none;
+      filter:brightness(.75); opacity:0; transform:scale(1.02);
+      transition:opacity 1.2s ease, transform 1.2s ease;
+      will-change:opacity,transform; backface-visibility:hidden; -webkit-backface-visibility:hidden;
+    }
+    .bg-media-element.is-active { opacity:1; transform:scale(1); }
+    .bg-media-element.is-leaving { opacity:0; transform:scale(1.01); }
+    .glass-reflection {
+      position:absolute;
+      inset:0;
+      border-radius:66px;
+      background:
+        linear-gradient(125deg,rgba(255,255,255,.12) 0%,rgba(255,255,255,.025) 24%,transparent 52%,rgba(255,255,255,.015) 82%,rgba(255,255,255,.035) 100%);
+      pointer-events:none;
+      z-index:30;
+    }
+    .top-controls {
+      position:absolute;
+      top:18px;
+      left:18px;
+      z-index:80;
+      display:block;
+      width:auto;
+      height:auto;
+    }
+    .btn-menu-main {
+      position:absolute;
+      top:0;
+      left:0;
+      z-index:90;
+      background:rgba(12,18,28,.94);
+      border:1.5px solid rgba(200,210,220,.9);
+      color:#f8fafc;
+      font-size:15px;
+      width:40px;
+      height:40px;
+      min-width:40px;
+      min-height:40px;
+      padding:0;
+      margin:0;
+      border-radius:8px;
+      cursor:pointer;
+      box-shadow:0 4px 12px rgba(0,0,0,.72);
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      outline:none;
+      line-height:1;
+      touch-action:none;
+      cursor:grab;
+    }
+    .btn-menu-main:active { cursor:grabbing; }
+    .btn-menu-main:hover,
+    .btn-menu-main.opened {
+      border-color:var(--ui-accent);
+      color:var(--ui-accent);
+      background:rgba(8,18,28,.96);
+    }
+    .btn-menu-main.opened {
+      border-right:0;
+      border-radius:6px 0 0 6px;
+    }
+
+    .control-panel {
+      position:absolute;
+      top:0;
+      left:39px;
+      display:flex;
+      flex-direction:column;
+      align-items:stretch;
+      gap:4px;
+      width:118px;
+      padding:6px;
+      margin:0;
+      border:1.5px solid rgba(200,210,220,.9);
+      border-left:0;
+      border-radius:0 8px 8px 0;
+      background:rgba(12,18,28,.94);
+      box-shadow:0 6px 18px rgba(0,0,0,.72);
+      backdrop-filter:blur(12px);
+      z-index:85;
+    }
+    .control-panel[hidden] { display:none; }
+    .btn-custom {
+      background:var(--ui-bg-soft); border:1px solid var(--ui-border);
+      color:var(--ui-text); font-size:11.5px; font-weight:650;
+      padding:6px 7px; border-radius:3px; cursor:pointer;
+      box-shadow:0 2px 6px rgba(0,0,0,.45); text-align:center;
+      width:100%; outline:none; white-space:nowrap;
+    }
+    .btn-custom:hover {
+      border-color:var(--ui-accent); color:var(--ui-accent);
+      background:var(--ui-accent-soft);
+    }
+    .btn-action-record.recording { background:rgba(239,68,68,.85)!important; border-color:#ef4444!important; color:#fff!important; animation:pulseRecord 1s infinite; }
+    @keyframes pulseRecord { 0%{opacity:1} 50%{opacity:.5} 100%{opacity:1} }
+    .chime-select,.style-select {
+      background:var(--ui-bg-soft); border:1px solid var(--ui-border);
+      color:var(--ui-text); font-size:11px; font-weight:600;
+      border-radius:3px; padding:5px 4px; outline:none; cursor:pointer; width:100%;
+    }
+    .chime-select {
+      background:var(--ui-bg-soft); border:1px solid var(--ui-border);
+      color:var(--ui-text); font-size:11.5px; font-weight:700;
+      border-radius:3px; padding:5px 4px; outline:none; cursor:pointer;
+      width:100%; text-align:center;
+    }
+    .style-color-picker { -webkit-appearance:none; appearance:none; width:100%; height:26px; border:1.5px solid rgba(255,255,255,.6); border-radius:5px; cursor:pointer; background:none; padding:0; }
+    .style-color-picker::-webkit-color-swatch-wrapper { padding:0; }
+    .style-color-picker::-webkit-color-swatch { border:none; border-radius:3px; }
+    .watch-toast {
+      position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+      background:rgba(10,14,22,.97); border:1.5px solid var(--ui-accent);
+      color:var(--ui-text); font-size:13px; font-weight:700;
+      padding:10px 20px; border-radius:6px; box-shadow:0 8px 24px rgba(0,0,0,.85);
+      z-index:100; opacity:0; pointer-events:none; transition:opacity .3s ease; white-space:nowrap;
+    }
+    .calendar-window {
+      position:absolute;
+      top:18px;
+      left:50%;
+      transform:translateX(-50%);
+      background:rgba(10,14,22,.88);
+      border:1.5px solid var(--ui-border-strong);
+      padding:5px 16px;
+      min-height:40px;
+      box-sizing:border-box;
+      display:flex;
+      align-items:center;
+      gap:10px;
+      font-family:'Inter',sans-serif;
+      box-shadow:inset 0 2px 8px rgba(0,0,0,.7),0 0 14px rgba(125,211,252,.12),0 6px 16px rgba(0,0,0,.6);
+      z-index:70;
+      border-radius:6px;
+      touch-action:none;
+      cursor:grab;
+    }
+    .calendar-window.dragging { cursor:grabbing; }
+    .cal-year-month { font-size:13px; font-weight:800; color:var(--ui-text); letter-spacing:1.2px; }
+    .cal-divider { width:1.5px; height:16px; background:var(--ui-border); }
+    .cal-day-date { display:flex; align-items:center; gap:6px; }
+    .cal-day-text { font-size:14px; font-weight:900; color:var(--ui-accent); }
+    .cal-date-num { font-size:17px; font-weight:900; color:#fff; }
+    .dial-input-container { position:absolute; bottom:14px; left:50%; transform:translateX(-50%); width:90%; max-width:360px; display:flex; flex-direction:column; align-items:center; gap:4px; z-index:35; }
+    .dial-textarea { width:100%; height:105px; background:transparent!important; border:none!important; outline:none!important; font-family:'Noto Sans KR',sans-serif; font-size:12.5px; font-weight:600; line-height:1.45; color:#fbcfe8; text-align:center; resize:none; overflow:hidden!important; text-shadow:0 2px 8px rgba(0,0,0,.95); user-select:text; -webkit-user-select:text; }
+    .hand-pivot-container {
+      position:absolute; top:50%; left:50%; width:0; height:0; pointer-events:none; z-index:25;
+      transform:translateZ(0);
+      backface-visibility:hidden; -webkit-backface-visibility:hidden;
+    }
+    .hand-hour-wrapper {
+      position:absolute; bottom:0; left:0; width:0; height:60px; transform-origin:bottom center; z-index:20;
+      will-change:transform; backface-visibility:hidden; -webkit-backface-visibility:hidden;
+      overflow:visible;
+    
+      transform-style:preserve-3d;}
+    .hour-gold-tip-wrap {
+      position:absolute; top:0; left:50%; transform:translate(-50%,-50%); width:34px; height:34px;
+      display:flex; align-items:center; justify-content:center; pointer-events:none;
+      backface-visibility:hidden; -webkit-backface-visibility:hidden;
+    }
+    .hour-gold-tip {
+      position:absolute; width:100%; height:100%; object-fit:contain; z-index:2; pointer-events:none;
+      filter:drop-shadow(0 0 4px rgba(254,240,138,.95));
+      backface-visibility:hidden; -webkit-backface-visibility:hidden;
+    
+      transform:translateZ(0);}
+    .hand-minute-wrapper {
+      position:absolute; bottom:0; left:0; width:0; height:90px; transform-origin:bottom center; z-index:21;
+      will-change:transform; backface-visibility:hidden; -webkit-backface-visibility:hidden;
+      overflow:visible;
+    
+      transform-style:preserve-3d;}
+    .minute-gold-tip-wrap {
+      position:absolute; top:0; left:50%; transform:translate(-50%,-50%); width:38px; height:38px;
+      display:flex; align-items:center; justify-content:center; pointer-events:none;
+      backface-visibility:hidden; -webkit-backface-visibility:hidden;
+    }
+    .minute-gold-tip {
+      position:absolute; width:100%; height:100%; object-fit:contain; z-index:2; pointer-events:none;
+      filter:drop-shadow(0 0 5px rgba(254,240,138,.95));
+      backface-visibility:hidden; -webkit-backface-visibility:hidden;
+    
+      transform:translateZ(0);}
+    .hand-time-text { position:relative; z-index:6; font-family:'Inter',sans-serif; font-weight:900; color:#fff; text-shadow:0 0 4px #000,0 0 14px #f59e0b; line-height:1; text-align:center; }
+    .hour-text { font-size:12px; }
+    .minute-text { display:block; font-size:10px; }
+    .hand-second-floating {
+      position:absolute; bottom:0; left:0; width:0; height:110px; transform-origin:bottom center; z-index:28;
+      will-change:transform; backface-visibility:hidden; -webkit-backface-visibility:hidden;
+      overflow:visible;
+    
+      transform-style:preserve-3d;}
+    .second-meteorite-wrap {
+      position:absolute; top:0; left:50%; transform:translate(-50%,-50%); width:65px; height:65px;
+      display:flex; align-items:center; justify-content:center; transform-origin:center;
+      backface-visibility:hidden; -webkit-backface-visibility:hidden; will-change:transform;
+    }
+    .second-meteorite {
+      position:absolute; width:100%; height:100%; object-fit:contain; z-index:2; pointer-events:none;
+      filter:drop-shadow(0 0 6px rgba(254,240,138,.98));
+      backface-visibility:hidden; -webkit-backface-visibility:hidden;
+    
+      transform:translateZ(0);}
+
+
+
+    .copyright-consent-compact{
+      padding:4px 2px;
+      font-size:8.8px;
+      line-height:1.25;
+    }
+    .btn-info-compact{
+      padding:4px 6px;
+      font-size:10px;
+    }
+    .sound-panel-compact{
+      width:132px;
+      gap:3px;
+      padding:5px;
+    }
+    .sound-action-row{
+      display:grid;
+      grid-template-columns:1fr 1fr;
+      gap:3px;
+    }
+    .sound-action-row .btn-custom{
+      padding:5px 4px;
+      font-size:10.5px;
+    }
+    .sound-section-label{
+      margin-top:2px;
+      padding-top:4px;
+      border-top:1px solid rgba(148,163,184,.28);
+      color:#cbd5e1;
+      font-size:9px;
+      font-weight:700;
+      text-align:left;
+      letter-spacing:.2px;
+    }
+    .app-info-button{
+      position:fixed;
+      right:10px;
+      bottom:10px;
+      z-index:500;
+      border:1px solid rgba(148,163,184,.65);
+      background:rgba(15,23,42,.82);
+      color:#cbd5e1;
+      border-radius:8px;
+      padding:6px 9px;
+      font-size:10px;
+      cursor:pointer;
+      box-shadow:0 3px 12px rgba(0,0,0,.35);
+      backdrop-filter:blur(8px);
+    }
+    .app-info-button:hover{
+      color:#fff;
+      border-color:#7dd3fc;
+    }
+
+    .copyright-note{font-size:9px;line-height:1.35;color:#cbd5e1;text-align:left;padding:6px 7px;border:1px solid rgba(148,163,184,.45);border-radius:5px;background:rgba(15,23,42,.72);}
+    .copyright-consent{display:flex;gap:6px;align-items:flex-start;font-size:9.5px;line-height:1.35;color:#f8fafc;padding:5px 2px;cursor:pointer;}
+    .copyright-consent input{margin-top:2px;accent-color:#7dd3fc;}
+    .copyright-modal-backdrop{position:fixed;inset:0;z-index:9998;background:rgba(2,6,23,.78);display:none;align-items:center;justify-content:center;padding:18px;}
+    .copyright-modal-backdrop.open{display:flex;}
+    .copyright-modal{width:min(420px,94vw);max-height:82vh;overflow:auto;background:#0f172a;border:1px solid #7dd3fc;border-radius:12px;padding:16px;box-shadow:0 20px 60px rgba(0,0,0,.65);color:#f8fafc;font-family:'Noto Sans KR',sans-serif;}
+    .copyright-modal h3{font-size:16px;margin-bottom:10px;}
+    .copyright-modal p,.copyright-modal li{font-size:12px;line-height:1.55;color:#dbeafe;}
+    .copyright-modal ul{padding-left:18px;margin:8px 0 12px;}
+    .copyright-modal .modal-actions{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;}
+    .copyright-modal .modal-actions button{flex:1;min-width:120px;}
+
+    .relay-badge{
+      position:absolute; left:50%; bottom:181px; transform:translateX(-50%);
+      z-index:34; background:rgba(10,14,22,.78);
+      border:1px solid rgba(125,211,252,.65); color:#e0f2fe;
+      font-size:10px; font-weight:800; letter-spacing:.2px;
+      padding:4px 9px; border-radius:999px;
+      box-shadow:0 4px 12px rgba(0,0,0,.5);
+      pointer-events:none; display:none; white-space:nowrap;
+    }
+
+    @media (max-width:600px){
+      .scaler{width:100vw!important;height:100dvh!important;transform:none!important}
+      .watch-container{width:100vw!important;height:100dvh!important;justify-content:center}
+      .strap-top,.strap-bottom{display:none!important}
+      .watch-case-row{width:100vw!important;height:100dvh!important;margin:0!important}
+      .titanium-frame{width:calc(100vw - 8px)!important;height:calc(100dvh - 8px)!important;border-radius:min(47vw,190px)!important;padding:3px!important;border:none!important}
+      .dial-viewport{border-radius:min(46vw,186px)!important;box-shadow:none!important}
+      .glass-reflection{border-radius:min(46vw,186px)!important}
+      .top-controls{top:16px;left:16px}
+      .titanium-frame{width:calc(100vw - 10px)!important;height:calc(100dvh - 10px)!important;border-radius:46px!important;padding:3px!important;border:none!important}
+      .dial-viewport{border-radius:42px!important;box-shadow:none!important}
+      .glass-reflection{border-radius:42px!important}
+      .dial-input-container{bottom:20px;width:92%}
+      .dial-textarea{height:120px;font-size:13px}
+    }
+  
+    .titanium-frame::after {
+      content:"";
+      position:absolute;
+      inset:3px;
+      border-radius:69px;
+      border:1px solid rgba(255,255,255,.18);
+      pointer-events:none;
+      z-index:2;
+    }
+
+    /* Robust clock-hand fallback: CSS gold nuggets remain visible even if an image fails. */
+    .hour-gold-tip-wrap::before,
+    .minute-gold-tip-wrap::before,
+    .second-meteorite-wrap::before {
+      content:"";
+      position:absolute;
+      inset:8%;
+      border-radius:46% 54% 50% 44% / 52% 43% 57% 48%;
+      background:
+        radial-gradient(circle at 33% 28%, rgba(255,255,235,.98) 0 7%, transparent 8%),
+        radial-gradient(circle at 40% 35%, #fff3a8 0 10%, #ffd447 28%, #d99a08 56%, #8e5200 82%, #5b3200 100%);
+      box-shadow:
+        inset -6px -7px 10px rgba(80,38,0,.55),
+        inset 5px 4px 8px rgba(255,244,170,.55),
+        0 0 8px rgba(255,199,30,.85),
+        0 0 16px rgba(255,180,0,.35);
+      transform:rotate(-9deg);
+      z-index:1;
+      pointer-events:none;
+    }
+    .gold-sync-target { opacity:0; }
+    .gold-sync-target.hand-image-ready { opacity:1; }
+
+    /* Story Scene: 글/배경/소리를 복제하지 않고 하나의 장면으로 연결 */
+    #letterPanel{
+      width:164px;
+      max-height:none;
+      overflow:visible;
+      gap:5px;
+    }
+    .relay-writing-hint{
+      font-size:10px;
+      line-height:1.35;
+      font-weight:800;
+      text-align:center;
+      color:#dbeafe;
+      padding:5px 6px;
+      border:1px solid rgba(125,211,252,.34);
+      border-radius:5px;
+      background:rgba(8,20,32,.62);
+    }
+    .relay-writing-action{
+      min-height:34px;
+      font-size:11.5px;
+      font-weight:900;
+      border-color:rgba(125,211,252,.75)!important;
+      background:rgba(14,116,144,.16)!important;
+    }
+    #letterPanel .letter-style-row,
+    #letterPanel .style-color-picker{
+      opacity:.88;
+    }
+    .relay-send-panel{width:136px;}
+    .relay-primary-send{
+      min-height:34px;
+      border-color:#7dd3fc!important;
+      color:#e0f2fe!important;
+      background:rgba(14,116,144,.28)!important;
+      font-weight:900!important;
+    }
+    .letter-style-row{
+      display:grid;
+      grid-template-columns:1.35fr .65fr;
+      gap:4px;
+    }
+    .letter-action-main{
+      width:100%;
+      min-height:31px;
+      font-size:11px;
+      font-weight:800;
+    }
+    .scene-advanced{
+      border-top:1px solid rgba(148,163,184,.24);
+      padding-top:3px;
+    }
+    .scene-advanced summary{
+      list-style:none;
+      cursor:pointer;
+      text-align:center;
+      font-size:9.5px;
+      color:#94a3b8;
+      padding:3px 2px;
+      user-select:none;
+    }
+    .scene-advanced summary::-webkit-details-marker{display:none;}
+    .scene-advanced[open] summary{color:#7dd3fc;}
+    .scene-advanced-content{
+      display:grid;
+      grid-template-columns:1fr 1fr;
+      gap:4px;
+      padding-top:4px;
+    }
+    .story-tag-row{
+      display:grid; grid-template-columns:1fr 1fr; gap:4px;
+    }
+    .story-scene-row{
+      display:grid; grid-template-columns:1fr 1fr; gap:4px;
+    }
+    .story-mini-status{
+      font-size:9.5px; line-height:1.35; color:#dbeafe;
+      padding:5px 6px; text-align:center;
+      border:1px solid rgba(125,211,252,.35);
+      border-radius:4px; background:rgba(15,23,42,.68);
+    }
+    .writing-prompt-bar{
+      position:absolute;
+      left:50%; bottom:124px; transform:translateX(-50%);
+      width:88%; max-width:340px;
+      z-index:34;
+      display:none;
+      align-items:center;
+      justify-content:center;
+      text-align:center;
+      padding:7px 12px;
+      border:1px solid rgba(125,211,252,.55);
+      border-radius:9px;
+      background:rgba(8,15,28,.84);
+      color:#e0f2fe;
+      font-size:10.5px;
+      font-weight:700;
+      line-height:1.4;
+      box-shadow:0 5px 16px rgba(0,0,0,.45);
+      backdrop-filter:blur(8px);
+      pointer-events:none;
+    }
+    .writing-prompt-bar.show{display:flex;}
+
+    /* 직관형 핵심 입력: 말하기 / 사진 / 영상 / 보내기 */
+    .relay-flow-bar{
+      position:absolute;
+      left:50%;
+      bottom:82px;
+      transform:translateX(-50%);
+      width:90%;
+      max-width:346px;
+      z-index:42;
+      display:flex;
+      flex-direction:column;
+      gap:6px;
+      padding:8px;
+      border:1px solid rgba(125,211,252,.62);
+      border-radius:11px;
+      background:rgba(8,15,28,.92);
+      box-shadow:0 7px 20px rgba(0,0,0,.56);
+      backdrop-filter:blur(10px);
+    }
+    .relay-flow-title{
+      font-size:11.5px;
+      line-height:1.25;
+      font-weight:900;
+      color:#f8fafc;
+      text-align:center;
+    }
+    .relay-quick-actions{
+      display:grid;
+      grid-template-columns:1.55fr .85fr .85fr;
+      gap:5px;
+    }
+    .relay-quick-actions button,
+    .relay-quick-actions label{
+      min-height:31px;
+      border:1px solid #64748b;
+      border-radius:7px;
+      background:#111827;
+      color:#fff;
+      font-size:10.5px;
+      font-weight:850;
+      cursor:pointer;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding:5px 7px;
+      user-select:none;
+    }
+    .relay-quick-actions .speak{
+      border-color:#7dd3fc;
+      color:#e0f2fe;
+      background:rgba(14,116,144,.28);
+    }
+    .relay-quick-actions .speak.listening{
+      border-color:#fb7185;
+      color:#ffe4e6;
+      background:rgba(159,18,57,.34);
+    }
+
+
+    .relay-card-head{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:8px;
+    }
+    .relay-build-mark{
+      flex:0 0 auto;
+      font-size:8px;
+      color:#64748b;
+      font-weight:800;
+      letter-spacing:.3px;
+    }
+    .relay-text-preview{
+      width:100%;
+      min-height:58px;
+      max-height:92px;
+      box-sizing:border-box;
+      resize:vertical;
+      border:1px solid rgba(148,163,184,.52);
+      border-radius:8px;
+      outline:none;
+      padding:8px 9px;
+      background:rgba(2,6,23,.74);
+      color:#fbcfe8;
+      font-family:'Noto Sans KR',sans-serif;
+      font-size:11px;
+      font-weight:650;
+      line-height:1.45;
+      text-align:left;
+    }
+    .relay-text-preview::placeholder{color:#94a3b8;}
+
+    .relay-main-speak{
+      width:100%;
+      min-height:36px;
+      border:1px solid #7dd3fc;
+      border-radius:8px;
+      background:rgba(14,116,144,.30);
+      color:#e0f2fe;
+      font-size:11.5px;
+      font-weight:900;
+      cursor:pointer;
+    }
+    .speech-status{
+      display:none;
+      min-height:15px;
+      margin-top:-2px;
+      text-align:center;
+      font-size:9.5px;
+      font-weight:800;
+      color:#7dd3fc;
+    }
+    .speech-status.show{display:block;}
+    .speech-status.error{color:#fda4af;}
+
+    .relay-main-speak.listening{
+      border-color:#fb7185;
+      color:#ffe4e6;
+      background:rgba(159,18,57,.34);
+    }
+    .relay-media-actions{
+      grid-template-columns:1fr 1fr 1fr;
+    }
+
+    .relay-send-now{
+      min-height:31px;
+      border:1px solid #86efac;
+      border-radius:7px;
+      background:rgba(22,101,52,.28);
+      color:#dcfce7;
+      font-size:10.5px;
+      font-weight:900;
+      cursor:pointer;
+    }
+    .story-play-active{
+      border-color:#7dd3fc!important;
+      color:#7dd3fc!important;
+      background:rgba(14,116,144,.20)!important;
+    }
+
+</style>
+</head>
+<body>
+  <div class="viewport-wrapper" id="viewportWrapper">
+    <div class="scaler" id="scalerElement">
+      <div class="watch-container">
+        <div class="strap-top"><div class="strap-gradient"></div></div>
+
+        <div class="watch-case-row">
+          <div class="titanium-frame">
+            <div class="dial-viewport" id="dialViewport">
+              <div class="glass-reflection"></div>
+              <div class="watch-toast" id="watchToast">준비 완료</div>
+
+              <div class="dial-sunray" id="dialSunray">
+                <div id="backgroundLayer" class="background-layer">
+                  <video id="defaultBackground" src="./assets/spring.mp4" class="bg-media-element is-active" autoplay loop muted playsinline preload="auto"></video>
+                </div>
+
+                <div class="top-controls">
+                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정">⚙️</button>
+
+                  <div id="mainMenuPanel" class="control-panel" style="left:41px;top:0" hidden>
+                    <button type="button" class="btn-custom" onclick="toggleSubPanel('backgroundPanel', event)">꾸미기</button>
+                    <button type="button" class="btn-custom" onclick="toggleSubPanel('soundPanel', event)">목소리</button>
+                    <button type="button" class="btn-custom" onclick="toggleSubPanel('letterPanel', event)">글씨</button>
+                    <button type="button" class="btn-custom" onclick="toggleSubPanel('saveSharePanel', event)">보내기</button>
+                    <button type="button" class="btn-custom" onclick="resetUIPositions(); event.stopPropagation();">↺ 위치 초기화</button>
+                  </div>
+
+                  <div id="backgroundPanel" class="control-panel" style="left:159px;top:0" hidden>
+                    <label for="filePhotoUpload" class="btn-custom">이미지</label>
+                    <input type="file" id="filePhotoUpload" accept="image/*" multiple style="display:none">
+                    <label for="fileVideoUpload" class="btn-custom">영상</label>
+                    <input type="file" id="fileVideoUpload" accept="video/*" multiple style="display:none">
+                    <button type="button" class="btn-custom" onclick="resetBackgroundSelection()">↺ 배경 다시 선택</button>
+                    <label for="fileMeteoriteUpload" class="btn-custom">시·분·초침</label>
+                    <input type="file" id="fileMeteoriteUpload" accept="image/*" style="display:none">
+                    <select id="backgroundIntervalSelect" class="style-select" title="배경 전환 간격">
+                      <option value="10">전환 10초</option>
+                      <option value="15" selected>전환 15초</option>
+                      <option value="30">전환 30초</option>
+                      <option value="60">전환 60초</option>
+                    </select>
+                  </div>
+
+                  <div id="soundPanel" class="control-panel sound-panel-compact" style="left:159px;top:40px" hidden>
+                    <select id="recordModeSelect" class="style-select" title="녹음 모드">
+                      <option value="voice" selected>🎙 목소리</option>
+                      <option value="music">🎵 음악</option>
+                    </select>
+                    <div class="sound-action-row">
+                      <button type="button" id="recordBtn" class="btn-custom btn-action-record" onclick="toggleRecording()">● 녹음 시작</button>
+                      <label for="voiceFileUpload" class="btn-custom">🎧 파일</label>
+                    </div>
+                    <input type="file" id="voiceFileUpload" accept="audio/*,.mp3,.m4a,.wav,.webm,.ogg" style="display:none">
+                    <label for="screenRecordUpload" class="btn-custom">📱 화면녹화</label>
+                    <input type="file" id="screenRecordUpload" accept="video/mp4,video/*,.mp4,.mov,.m4v,.webm" style="display:none">
+                    <div id="audioPlaybackControls" style="display:none;gap:6px;grid-template-columns:1fr 1fr;">
+                      <button type="button" id="playAudioBtn" class="btn-custom" onclick="playRecordedAudio()" style="display:block;background:rgba(236,72,153,.9);color:#fff;font-weight:800">▶ 재생</button>
+                      <button type="button" id="stopAudioBtn" class="btn-custom" onclick="stopAllPlayback()" style="display:none;background:rgba(71,85,105,.95);color:#fff;font-weight:800">■ 중지</button>
+                    </div>
+                    <select id="chimeSelect" style="display:none" aria-hidden="true">
+                      <option value="none" selected>없음</option>
+                    </select>
+                    <label class="copyright-consent copyright-consent-compact" for="copyrightConsent">
+                      <input type="checkbox" id="copyrightConsent">
+                      <span>직접 제작·사용 허가 미디어</span>
+                    </label>
+                  </div>
+
+                  <div id="letterPanel" class="control-panel" style="left:159px;top:80px" hidden>
+                    <div id="relayWritingHint" class="relay-writing-hint">한 줄을 남겨보세요</div>
+                    <div class="letter-style-row">
+                      <select id="fontFamilySelect" class="style-select" title="글씨체">
+                        <option value="'Noto Serif KR', serif">명조</option>
+                        <option value="'Noto Sans KR', sans-serif" selected>고딕</option>
+                        <option value="'Nanum Myeongjo', serif">나눔</option>
+                        <option value="'Cinzel', serif">로만</option>
+                        <option value="'JetBrains Mono', monospace">모노</option>
+                      </select>
+                      <select id="fontSizeSelect" class="style-select" title="글자 크기">
+                        <option value="10px">10</option><option value="11px">11</option><option value="12px">12</option>
+                        <option value="13px" selected>13</option><option value="14px">14</option><option value="16px">16</option>
+                      </select>
+                    </div>
+                    <input type="color" id="textColorPicker" class="style-color-picker" value="#fbcfe8" title="글자 색상">
+                    <button type="button" class="btn-custom relay-writing-action" onclick="showWritingPrompt()">💡 다음 문장 도움</button>
+                    <button type="button" class="btn-custom relay-writing-action" onclick="showClosingPrompt()">💌 끝맺음 도움</button>
+
+                    <!-- 릴레이 내부 저장용 -->
+                    <select id="emotionTagSelect" style="display:none" aria-hidden="true">
+                      <option value="memory" selected>추억</option>
+                    </select>
+                    <select id="timeTagSelect" style="display:none" aria-hidden="true">
+                      <option value="now" selected>지금</option>
+                    </select>
+                    <div id="storySceneStatus" style="display:none"></div>
+                    <button type="button" id="storyPlayBtn" onclick="toggleStoryPlayback()" style="display:none" aria-hidden="true"></button>
+                  </div>
+
+                  <div id="saveSharePanel" class="control-panel relay-send-panel" style="left:159px;top:120px" hidden>
+                    <button type="button" class="btn-custom" onclick="saveCurrentStateLocally()">💾 임시 저장</button>
+                    <button type="button" class="btn-custom relay-primary-send" onclick="startRelayShare()">📨 다음 사람에게</button>
+                    <button type="button" class="btn-custom" onclick="completeRelay()">🏁 최종 완성</button>
+                  </div>
+                </div>
+
+                <div class="calendar-window">
+                  <div class="cal-year-month" id="calYearMonth">2026 SEP</div>
+                  <div class="cal-divider"></div>
+                  <div class="cal-day-date"><span class="cal-day-text" id="calDay">WED</span><span class="cal-date-num" id="calDate">16</span></div>
+                </div>
+
+                <div id="relayBadge" class="relay-badge"></div>
+
+                <div id="writingPromptBar" class="writing-prompt-bar"></div>
+
+                <div id="relayFlowBar" class="relay-flow-bar">
+                  <div class="relay-card-head">
+                    <div id="relayFlowTitle" class="relay-flow-title">당신의 이야기를 남겨주세요</div>
+                    <div class="relay-build-mark">v2.8.1</div>
+                  </div>
+
+                  <button type="button" id="speakToWriteBtn" class="relay-main-speak" onclick="toggleSpeakToWrite()">🎙 말로 글쓰기</button>
+                  <div id="speechStatus" class="speech-status"></div>
+
+                  <textarea class="relay-text-preview" id="dialContentInput" rows="3" placeholder="말한 내용이 여기에 글로 표시됩니다"></textarea>
+
+                  <div class="relay-quick-actions relay-media-actions">
+                    <button type="button" id="quickVoiceBtn" onclick="quickToggleVoiceRecord()">🔴 목소리 녹음</button>
+                    <label for="filePhotoUpload">📷 사진 추가</label>
+                    <label for="fileVideoUpload">🎬 영상 추가</label>
+                  </div>
+
+                  <button type="button" class="relay-send-now" onclick="startRelayShare()">📨 다음 사람에게</button>
+                </div>
+
+                <div class="hand-pivot-container">
+                  <div class="hand-hour-wrapper" id="mainHourHand"><div class="hour-gold-tip-wrap"><img id="hourGoldImg" class="hour-gold-tip gold-sync-target" alt=""><span id="hourNumText" class="hand-time-text hour-text">12</span></div></div>
+                  <div class="hand-minute-wrapper" id="mainMinuteHand"><div class="minute-gold-tip-wrap"><img id="minGoldImg" class="minute-gold-tip gold-sync-target" alt=""><span id="minNumText" class="hand-time-text minute-text">00</span></div></div>
+                  <div class="hand-second-floating" id="secondHandPivot"><div class="second-meteorite-wrap" id="secondMeteoriteWrap"><img id="secGoldImg" class="second-meteorite gold-sync-target" alt=""></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="strap-bottom"><div class="strap-gradient-bottom"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    window.addEventListener('DOMContentLoaded',()=>setTimeout(()=>window.updateRelayBadge?.(),120));
+    window.showToast = function(msg){
+      const toast = document.getElementById('watchToast');
+      toast.textContent = msg; toast.style.opacity = '1';
+      clearTimeout(window.__toastTimer);
+      window.__toastTimer = setTimeout(()=>toast.style.opacity='0',2500);
+    };
+
+    window.updateRelayBadge = function(){
+      const badge=document.getElementById('relayBadge');
+      const hint=document.getElementById('relayWritingHint');
+      if(!badge)return;
+      const count=Number(window.currentRelayCount||0);
+      badge.style.display='block';
+
+      if(window.relayCompleted){
+        badge.textContent=`🏁 ${Math.max(1,count)}명 최종 완성`;
+        if(hint) hint.textContent='완성된 릴레이 편지입니다';
+      }else if(count>0){
+        badge.textContent=`✉️ ${count+1}번째 편지 · 이전 → 나`;
+        if(hint) hint.textContent=`${count+1}번째 편지를 이어 써보세요`;
+      }else{
+        badge.textContent='✉️ 첫 편지';
+        if(hint) hint.textContent='한 줄을 남겨보세요';
+      }
+    };
+    async function startRelayShare(){
+      if(window.relayCompleted){
+        window.showToast('🏁 이미 완성된 릴레이입니다');
+        return;
+      }
+      window.ensureCurrentSceneCaptured?.();
+      window.showToast('📨 편지를 다음 사람에게 넘깁니다');
+      await window.saveToFirestoreAndShare('relay');
+    }
+    window.startRelayShare=startRelayShare;
+
+    async function completeRelay(){
+      const count=Number(window.currentRelayCount||0);
+      if(count<1){
+        window.showToast('먼저 편지를 다음 사람에게 전달해 릴레이를 시작하세요');
+        return;
+      }
+      window.ensureCurrentSceneCaptured?.();
+      window.relayCompleted=true;
+      window.updateRelayBadge();
+      window.showToast(`🏁 ${count}명 최종 완성`);
+      await window.saveToFirestoreAndShare('complete');
+    }
+    window.completeRelay=completeRelay;
+
+    const DEFAULT_GOLD_BASE64 = "data:image/png;base64,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";
+    function setHandImageSource(source){
+      ['hourGoldImg','minGoldImg','secGoldImg'].forEach(id=>{
+        const img=document.getElementById(id);
+        if(!img) return;
+        img.classList.remove('hand-image-ready');
+        img.removeAttribute('src');
+        if(!source) return; // CSS gold fallback remains visible.
+        img.onload=()=>{ img.classList.add('hand-image-ready'); };
+        img.onerror=()=>{
+          img.classList.remove('hand-image-ready');
+          img.removeAttribute('src');
+        };
+        img.src=source;
+      });
+    }
+    window.setHandImageSource=setHandImageSource;
+    // Default startup uses the CSS gold fallback; no external/image decoding dependency.
+    setHandImageSource('');
+
+
+    window.__bgCurrent = document.getElementById('defaultBackground');
+
+    function createBackgroundElement(source,type='image'){
+      let el;
+      if(type==='video'){
+        el=document.createElement('video');
+        el.autoplay=true; el.loop=true; el.muted=true; el.playsInline=true; el.preload='auto';
+      }else{
+        el=document.createElement('img');
+        el.decoding='async';
+      }
+      el.className='bg-media-element';
+      el.src=source;
+      return el;
+    }
+
+    async function waitBackgroundReady(el,type){
+      try{
+        if(type==='video'){
+          await new Promise(resolve=>{
+            if(el.readyState>=2) return resolve();
+            const done=()=>resolve();
+            el.addEventListener('loadeddata',done,{once:true});
+            setTimeout(done,2000);
+          });
+          await el.play().catch(()=>{});
+        }else if(el.decode){
+          await el.decode().catch(()=>{});
+        }
+      }catch(_){}
+    }
+
+    window.applyBackground = async function(source,type='image',instant=false){
+      const layer=document.getElementById('backgroundLayer');
+      const mode=document.getElementById('backgroundTransitionSelect')?.value||'soft';
+      if(mode==='direct') instant=true;
+
+      const oldEl=window.__bgCurrent;
+      const newEl=createBackgroundElement(source,type);
+      layer.appendChild(newEl);
+      await waitBackgroundReady(newEl,type);
+
+      if(instant || !oldEl){
+        newEl.style.transition='none';
+        newEl.classList.add('is-active');
+        requestAnimationFrame(()=>newEl.style.transition='');
+        if(oldEl && oldEl!==newEl){
+          try{oldEl.pause?.();}catch(_){}
+          oldEl.remove();
+        }
+      }else{
+        newEl.getBoundingClientRect();
+        requestAnimationFrame(()=>{
+          newEl.classList.add('is-active');
+          oldEl.classList.remove('is-active');
+          oldEl.classList.add('is-leaving');
+          setTimeout(()=>{
+            try{oldEl.pause?.();}catch(_){}
+            if(oldEl.parentNode===layer) oldEl.remove();
+          },1350);
+        });
+      }
+      window.__bgCurrent=newEl;
+    };
+
+    function clearBackgroundRotationTimer(){
+      if(window.backgroundRotationTimer){
+        clearInterval(window.backgroundRotationTimer);
+        window.backgroundRotationTimer=null;
+      }
+    }
+
+    async function showBackgroundAt(index,instant=false){
+      const list=window.backgroundPlaylist||[];
+      if(!list.length)return;
+      window.backgroundRotationIndex=((index%list.length)+list.length)%list.length;
+      const item=list[window.backgroundRotationIndex];
+      await window.applyBackground(item.url,item.type||'image',instant);
+    }
+
+    function startBackgroundRotation(){
+      clearBackgroundRotationTimer();
+      const list=window.backgroundPlaylist||[];
+      if(list.length<2)return;
+      const sec=Number(document.getElementById('backgroundIntervalSelect')?.value||window.backgroundRotationSeconds||15);
+      window.backgroundRotationSeconds=Math.max(5,sec);
+      window.backgroundRotationTimer=setInterval(()=>{
+        showBackgroundAt((window.backgroundRotationIndex||0)+1,false);
+      },window.backgroundRotationSeconds*1000);
+    }
+
+    function toggleBackgroundRotation(){
+      if(window.backgroundRotationTimer){
+        clearBackgroundRotationTimer();
+        window.showToast('⏸ 배경 자동전환 정지');
+      }else{
+        if((window.backgroundPlaylist||[]).length<2){
+          window.showToast('이미지/영상을 2개 이상 선택하세요');
+          return;
+        }
+        startBackgroundRotation();
+        window.showToast(`▶ ${window.backgroundRotationSeconds}초 · 부드러운 전환`);
+      }
+    }
+    window.toggleBackgroundRotation=toggleBackgroundRotation;
+
+    window.applyWatchData = function(data){
+      const input=document.getElementById('dialContentInput');
+      const ff=document.getElementById('fontFamilySelect');
+      const fs=document.getElementById('fontSizeSelect');
+      const tc=document.getElementById('textColorPicker');
+      const ch=document.getElementById('chimeSelect');
+
+      input.value=data.text||'';
+      ff.value=data.fontFamily||"'Noto Sans KR', sans-serif"; input.style.fontFamily=ff.value;
+      fs.value=data.fontSize||'13px'; input.style.fontSize=fs.value;
+      tc.value=data.textColor||'#fbcfe8'; input.style.color=tc.value;
+      if(ch) ch.value='none';
+      const narrator=document.getElementById('narratorSelect'); if(narrator) narrator.value=data.narrator||'female';
+
+      window.recordedAudioBlob=null;
+      window.remoteAudioUrl=data.audioUrl||'';
+      window.remoteNarratorAudioUrl=data.narratorAudioUrl||'';
+      const playBtn=document.getElementById('playAudioBtn');
+      playBtn.style.display=window.remoteAudioUrl?'block':'none';
+      playBtn.textContent='▶ 재생음';
+
+      window.customBackgroundBlob=null;
+      window.backgroundPlaylistBlobs=[];
+      window.remoteBackgroundUrl=data.backgroundUrl||'';
+      window.remoteBackgroundType=data.backgroundType||'';
+      window.backgroundPlaylist = Array.isArray(data.backgroundPlaylist) && data.backgroundPlaylist.length
+        ? data.backgroundPlaylist.map(x=>({url:x.url,type:x.type||'image'}))
+        : (window.remoteBackgroundUrl ? [{url:window.remoteBackgroundUrl,type:window.remoteBackgroundType||'image'}] : []);
+      window.backgroundRotationSeconds=Number(data.backgroundRotationSeconds||15);
+      const intervalSel=document.getElementById('backgroundIntervalSelect');
+      if(intervalSel) intervalSel.value=String(window.backgroundRotationSeconds);
+      if(window.backgroundPlaylist.length){
+        window.backgroundRotationIndex=0;
+        showBackgroundAt(0,true);
+        startBackgroundRotation();
+      }
+
+      window.currentRelayCount=Number(data.relayCount||0);
+      window.currentRelayHistory=Array.isArray(data.relayHistory)?data.relayHistory:[];
+      window.relayCompleted=!!data.relayCompleted;
+      window.updateRelayBadge?.();
+
+      window.storyScenes = Array.isArray(data.storyScenes) ? data.storyScenes.map(scene=>({...scene})) : [];
+      const emotionSel=document.getElementById('emotionTagSelect');
+      const timeSel=document.getElementById('timeTagSelect');
+      if(emotionSel) emotionSel.value=data.storyEmotion||'memory';
+      if(timeSel) timeSel.value=data.storyTimeTag||'now';
+      window.updateStorySceneUI?.();
+
+      window.customMeteorBlob=null;
+      window.remoteMeteorUrl=data.meteorUrl||'';
+      if(window.remoteMeteorUrl) setHandImageSource(window.remoteMeteorUrl);
+      else setHandImageSource('');
+      if(data.uiPositions){
+        window.applyUIPositions?.(data.uiPositions,true);
+      }
+    };
+
+
+    // ---------- Story Scene Engine ----------
+    const WRITING_PROMPTS = [
+      '앞사람의 마지막 문장에서 떠오른 기억을 한 줄 적어보세요.',
+      '이 편지를 다음 사람에게 넘기기 전에 꼭 전하고 싶은 말은?',
+      '우리 사이에서 가장 기억나는 순간 하나를 적어보세요.',
+      '앞사람의 글에 답장하듯 한 문장만 이어보세요.',
+      '지금 이 편지를 받는 사람에게 가장 먼저 하고 싶은 말은?',
+      '함께 웃었던 장면 하나를 짧게 적어보세요.',
+      '다음 사람이 읽었을 때 미소 지을 문장을 남겨보세요.',
+      '10년 뒤 다시 읽어도 남기고 싶은 한마디는?'
+    ];
+    window.__writingPromptIndex = -1;
+
+    function emotionLabel(value){
+      return ({
+        memory:'추억', thanks:'감사', cheer:'응원', love:'사랑',
+        joy:'기쁨', longing:'그리움', fun:'웃음'
+      })[value] || '추억';
+    }
+    function timeLabel(value){
+      return ({past:'그때', now:'지금', future:'미래'})[value] || '지금';
+    }
+
+    function updateStorySceneUI(){
+      const status=document.getElementById('storySceneStatus');
+      const count=Array.isArray(window.storyScenes)?window.storyScenes.length:0;
+      if(status){
+        const emotion=document.getElementById('emotionTagSelect')?.value||'memory';
+        const timeTag=document.getElementById('timeTagSelect')?.value||'now';
+        status.textContent = count ? `저장된 장면 ${count}개` : '';
+      }
+    }
+    window.updateStorySceneUI=updateStorySceneUI;
+
+    function showWritingPrompt(){
+      window.__writingPromptIndex=(window.__writingPromptIndex+1)%WRITING_PROMPTS.length;
+      const bar=document.getElementById('writingPromptBar');
+      if(!bar)return;
+      bar.textContent='💡 '+WRITING_PROMPTS[window.__writingPromptIndex];
+      bar.classList.add('show');
+      clearTimeout(window.__promptHideTimer);
+      window.__promptHideTimer=setTimeout(()=>bar.classList.remove('show'),7000);
+    }
+    window.showWritingPrompt=showWritingPrompt;
+
+    const CLOSING_PROMPTS = [
+      '다음 사람에게: “이제 네 이야기를 이어줘.”',
+      '“우리 이야기는 여기서 끝이 아니라, 다음 사람에게 이어집니다.”',
+      '“이 편지에 네 기억 한 줄을 더해줘.”',
+      '“다음 시간을 너에게 넘길게.”',
+      '“우리의 다음 이야기는 네 차례야.”'
+    ];
+    window.__closingPromptIndex=-1;
+    function showClosingPrompt(){
+      window.__closingPromptIndex=(window.__closingPromptIndex+1)%CLOSING_PROMPTS.length;
+      const bar=document.getElementById('writingPromptBar');
+      if(!bar)return;
+      bar.textContent='💌 '+CLOSING_PROMPTS[window.__closingPromptIndex];
+      bar.classList.add('show');
+      clearTimeout(window.__promptHideTimer);
+      window.__promptHideTimer=setTimeout(()=>bar.classList.remove('show'),7000);
+    }
+    window.showClosingPrompt=showClosingPrompt;
+
+    function currentSceneSignature(scene){
+      return JSON.stringify([
+        scene.text, scene.fontFamily, scene.fontSize, scene.textColor,
+        scene.emotion, scene.timeTag, scene.backgroundIndex, !!scene.hasAudio
+      ]);
+    }
+
+    function buildCurrentStoryScene(){
+      const input=document.getElementById('dialContentInput');
+      const text=(input?.value||'').trim();
+      if(!text)return null;
+      const list=window.backgroundPlaylist||[];
+      return {
+        id:'scene_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,6),
+        text,
+        fontFamily:document.getElementById('fontFamilySelect')?.value||"'Noto Sans KR', sans-serif",
+        fontSize:document.getElementById('fontSizeSelect')?.value||'13px',
+        textColor:document.getElementById('textColorPicker')?.value||'#fbcfe8',
+        emotion:document.getElementById('emotionTagSelect')?.value||'memory',
+        timeTag:document.getElementById('timeTagSelect')?.value||'now',
+        backgroundIndex:list.length ? Number(window.backgroundRotationIndex||0) : -1,
+        hasAudio:!!(window.recordedAudioBlob?.size || window.remoteAudioUrl),
+        audioUrl:window.remoteAudioUrl||'',
+        relayStep:Number(window.currentRelayCount||0),
+        createdAt:new Date().toISOString()
+      };
+    }
+
+    function saveStoryScene(silent=false){
+      const scene=buildCurrentStoryScene();
+      if(!scene){
+        if(!silent) window.showToast('✍️ 먼저 편지 내용을 적어주세요');
+        return false;
+      }
+      window.storyScenes=Array.isArray(window.storyScenes)?window.storyScenes:[];
+      const last=window.storyScenes[window.storyScenes.length-1];
+      if(last && currentSceneSignature(last)===currentSceneSignature(scene)){
+        if(!silent) window.showToast('✓ 현재 내용은 이미 마지막 장면에 저장되어 있습니다');
+        updateStorySceneUI();
+        return true;
+      }
+      window.storyScenes.push(scene);
+      updateStorySceneUI();
+      if(!silent){
+        const bgText=scene.backgroundIndex>=0?'배경 연결':'기본 배경';
+        const audioText=scene.hasAudio?' · 음성 연결':'';
+        window.showToast(`🎬 장면 ${window.storyScenes.length} 저장 · ${bgText}${audioText}`);
+      }
+      return true;
+    }
+    window.saveStoryScene=saveStoryScene;
+
+    function ensureCurrentSceneCaptured(){
+      return saveStoryScene(true);
+    }
+    window.ensureCurrentSceneCaptured=ensureCurrentSceneCaptured;
+
+    function removeLastStoryScene(){
+      stopStoryPlayback();
+      if(!Array.isArray(window.storyScenes) || !window.storyScenes.length){
+        window.showToast('삭제할 장면이 없습니다');
+        return;
+      }
+      window.storyScenes.pop();
+      updateStorySceneUI();
+      window.showToast(`↶ 마지막 장면 삭제 · ${window.storyScenes.length}개 남음`);
+    }
+    window.removeLastStoryScene=removeLastStoryScene;
+
+    function stopStoryPlayback(){
+      if(window.storyPlaybackTimer){
+        clearTimeout(window.storyPlaybackTimer);
+        window.storyPlaybackTimer=null;
+      }
+      if(window.storyPlaybackAudio){
+        try{ window.storyPlaybackAudio.pause(); window.storyPlaybackAudio.currentTime=0; }catch(_){}
+        window.storyPlaybackAudio=null;
+      }
+      window.storyPlaybackIndex=-1;
+      const btn=document.getElementById('storyPlayBtn');
+      if(btn){
+        btn.textContent='▶ 이야기 재생';
+        btn.classList.remove('story-play-active');
+      }
+    }
+    window.stopStoryPlayback=stopStoryPlayback;
+
+    async function applyStoryScene(scene,index){
+      if(!scene)return;
+      const input=document.getElementById('dialContentInput');
+      if(input){
+        input.value=scene.text||'';
+        input.style.fontFamily=scene.fontFamily||"'Noto Sans KR', sans-serif";
+        input.style.fontSize=scene.fontSize||'13px';
+        input.style.color=scene.textColor||'#fbcfe8';
+      }
+      const ff=document.getElementById('fontFamilySelect');
+      const fs=document.getElementById('fontSizeSelect');
+      const tc=document.getElementById('textColorPicker');
+      const em=document.getElementById('emotionTagSelect');
+      const tt=document.getElementById('timeTagSelect');
+      if(ff)ff.value=scene.fontFamily||"'Noto Sans KR', sans-serif";
+      if(fs)fs.value=scene.fontSize||'13px';
+      if(tc)tc.value=scene.textColor||'#fbcfe8';
+      if(em)em.value=scene.emotion||'memory';
+      if(tt)tt.value=scene.timeTag||'now';
+
+      if(Number.isInteger(Number(scene.backgroundIndex)) && Number(scene.backgroundIndex)>=0){
+        const list=window.backgroundPlaylist||[];
+        if(list.length){
+          await showBackgroundAt(Math.min(Number(scene.backgroundIndex),list.length-1),false);
+        }
+      }
+      const bar=document.getElementById('writingPromptBar');
+      if(bar){
+        bar.textContent=`🎬 ${index+1}/${window.storyScenes.length} · ${timeLabel(scene.timeTag)} · ${emotionLabel(scene.emotion)}`;
+        bar.classList.add('show');
+      }
+      updateStorySceneUI();
+    }
+
+    function playSceneAudio(scene,index,onDone){
+      let src=scene?.audioUrl||'';
+      let objectUrl='';
+      if(!src && index===window.storyScenes.length-1 && window.recordedAudioBlob?.size){
+        try{
+          objectUrl=URL.createObjectURL(window.recordedAudioBlob);
+          src=objectUrl;
+        }catch(_){}
+      }
+      if(!src){
+        window.storyPlaybackTimer=setTimeout(onDone,4800);
+        return;
+      }
+      try{
+        const audio=new Audio(src);
+        window.storyPlaybackAudio=audio;
+        let finished=false;
+        const finish=()=>{
+          if(finished)return;
+          finished=true;
+          if(objectUrl)try{URL.revokeObjectURL(objectUrl);}catch(_){}
+          window.storyPlaybackAudio=null;
+          onDone();
+        };
+        audio.onended=finish;
+        audio.onerror=()=>{ window.storyPlaybackTimer=setTimeout(finish,1500); };
+        audio.play().then(()=>{
+          window.storyPlaybackTimer=setTimeout(finish,18000);
+        }).catch(()=>{
+          window.storyPlaybackTimer=setTimeout(finish,4800);
+        });
+      }catch(_){
+        window.storyPlaybackTimer=setTimeout(onDone,4800);
+      }
+    }
+
+    function playStorySceneAt(index){
+      const scenes=window.storyScenes||[];
+      if(index>=scenes.length){
+        stopStoryPlayback();
+        const bar=document.getElementById('writingPromptBar');
+        if(bar){
+          bar.textContent=`🏁 ${scenes.length}개 장면 재생 완료`;
+          bar.classList.add('show');
+          clearTimeout(window.__promptHideTimer);
+          window.__promptHideTimer=setTimeout(()=>bar.classList.remove('show'),3000);
+        }
+        return;
+      }
+      window.storyPlaybackIndex=index;
+      applyStoryScene(scenes[index],index).then(()=>{
+        playSceneAudio(scenes[index],index,()=>playStorySceneAt(index+1));
+      });
+    }
+
+    function toggleStoryPlayback(){
+      if(window.storyPlaybackIndex>=0){
+        stopStoryPlayback();
+        window.showToast('■ 이야기 재생을 중지했습니다');
+        return;
+      }
+      if(!Array.isArray(window.storyScenes) || !window.storyScenes.length){
+        if(!saveStoryScene(true)){
+          window.showToast('장면을 먼저 저장해주세요');
+          return;
+        }
+      }
+      const btn=document.getElementById('storyPlayBtn');
+      if(btn){
+        btn.textContent='■ 재생 중지';
+        btn.classList.add('story-play-active');
+      }
+      playStorySceneAt(0);
+    }
+    window.toggleStoryPlayback=toggleStoryPlayback;
+
+    document.getElementById('emotionTagSelect')?.addEventListener('change',updateStorySceneUI);
+    document.getElementById('timeTagSelect')?.addEventListener('change',updateStorySceneUI);
+    updateStorySceneUI();
+
+    // ---------- IndexedDB ----------
+    const DB_NAME='LuxuryWatchStandardDB', STORE='media', DB_VERSION=1;
+    function openDB(){
+      return new Promise((resolve,reject)=>{
+        const r=indexedDB.open(DB_NAME,DB_VERSION);
+        r.onupgradeneeded=()=>{ if(!r.result.objectStoreNames.contains(STORE)) r.result.createObjectStore(STORE); };
+        r.onsuccess=()=>resolve(r.result); r.onerror=()=>reject(r.error);
+      });
+    }
+    async function dbPut(key,value){ const db=await openDB(); return new Promise((res,rej)=>{ const tx=db.transaction(STORE,'readwrite'); tx.objectStore(STORE).put(value,key); tx.oncomplete=()=>{db.close();res();}; tx.onerror=()=>{db.close();rej(tx.error);}; }); }
+    async function dbGet(key){ const db=await openDB(); return new Promise((res,rej)=>{ const tx=db.transaction(STORE,'readonly'); const q=tx.objectStore(STORE).get(key); q.onsuccess=()=>{const v=q.result;db.close();res(v);}; q.onerror=()=>{db.close();rej(q.error);}; }); }
+
+    async function saveCurrentStateLocally(){
+      window.ensureCurrentSceneCaptured?.();
+      try{
+        localStorage.setItem('LuxuryWatchStandardState',JSON.stringify({
+          text:document.getElementById('dialContentInput').value,
+          fontFamily:document.getElementById('fontFamilySelect').value,
+          fontSize:document.getElementById('fontSizeSelect').value,
+          textColor:document.getElementById('textColorPicker').value,
+          chime:(document.getElementById('chimeSelect')?.value||'none'),
+          relayCount:Number(window.currentRelayCount||0),
+          relayHistory:Array.isArray(window.currentRelayHistory)?window.currentRelayHistory:[],
+          relayCompleted:!!window.relayCompleted,
+          uiPositions:window.getCurrentUIPositions?.()||null,
+          storyScenes:Array.isArray(window.storyScenes)?window.storyScenes:[],
+          storyEmotion:document.getElementById('emotionTagSelect')?.value||'memory',
+          storyTimeTag:document.getElementById('timeTagSelect')?.value||'now',
+          savedAt:new Date().toISOString()
+        }));
+        if(window.recordedAudioBlob) await dbPut('audio',window.recordedAudioBlob);
+        if(window.customBackgroundBlob) await dbPut('background',{blob:window.customBackgroundBlob,type:window.customBackgroundType});
+        if(window.customMeteorBlob) await dbPut('meteor',window.customMeteorBlob);
+        window.showToast('✅ 저장 완료');
+      }catch(err){ console.error(err); window.showToast('❌ 저장 실패'); }
+    }
+
+    window.restoreLocalState = async function(){
+      try{
+        const raw=localStorage.getItem('LuxuryWatchStandardState');
+        if(raw){
+          const s=JSON.parse(raw); const input=document.getElementById('dialContentInput');
+          input.value=s.text??input.value;
+          if(s.fontFamily){document.getElementById('fontFamilySelect').value=s.fontFamily;input.style.fontFamily=s.fontFamily;}
+          if(s.fontSize){document.getElementById('fontSizeSelect').value=s.fontSize;input.style.fontSize=s.fontSize;}
+          if(s.textColor){document.getElementById('textColorPicker').value=s.textColor;input.style.color=s.textColor;}
+          const chimeEl=document.getElementById('chimeSelect'); if(chimeEl) chimeEl.value='none';
+          window.currentRelayCount=Number(s.relayCount||0);
+          window.currentRelayHistory=Array.isArray(s.relayHistory)?s.relayHistory:[];
+          window.relayCompleted=!!s.relayCompleted;
+          if(s.uiPositions) window.applyUIPositions?.(s.uiPositions,false);
+          window.storyScenes=Array.isArray(s.storyScenes)?s.storyScenes.map(scene=>({...scene})):[];
+          const emotionSel=document.getElementById('emotionTagSelect');
+          const timeSel=document.getElementById('timeTagSelect');
+          if(emotionSel) emotionSel.value=s.storyEmotion||'memory';
+          if(timeSel) timeSel.value=s.storyTimeTag||'now';
+          window.updateRelayBadge?.();
+          window.updateStorySceneUI?.();
+        }
+        const audio=await dbGet('audio'); if(audio){window.recordedAudioBlob=audio; const b=document.getElementById('playAudioBtn'); if(b){b.style.display='block'; b.textContent='▶ 재생';} const pc=document.getElementById('audioPlaybackControls'); if(pc) pc.style.display='grid';}
+        const bg=await dbGet('background'); if(bg?.blob){window.customBackgroundBlob=bg.blob;window.customBackgroundType=bg.type;window.applyBackground(URL.createObjectURL(bg.blob),bg.type);}
+        const meteor=await dbGet('meteor');
+        if(meteor){
+          window.customMeteorBlob=meteor;
+          const handUrl=URL.createObjectURL(meteor);
+          setHandImageSource(handUrl);
+        }
+        if(raw||audio||bg||meteor) window.showToast('💾 저장 상태 복원 완료');
+      }catch(err){console.error('restore error',err);}
+    };
+
+    ['filePhotoUpload','fileVideoUpload'].forEach(id=>{
+      const el=document.getElementById(id);
+      el?.addEventListener('click',()=>{ el.value=''; });
+    });
+
+    window.resetBackgroundSelection=function(){
+      clearBackgroundRotationTimer();
+      (window.backgroundPlaylist||[]).forEach(item=>{
+        if(item?.url && String(item.url).startsWith('blob:')){
+          try{ URL.revokeObjectURL(item.url); }catch(_){}
+        }
+      });
+      window.backgroundPlaylist=[];
+      window.backgroundPlaylistBlobs=[];
+      window.backgroundRotationIndex=0;
+      window.customBackgroundBlob=null;
+      window.customBackgroundType='';
+      window.remoteBackgroundUrl='';
+      window.remoteBackgroundType='';
+      const photo=document.getElementById('filePhotoUpload');
+      const video=document.getElementById('fileVideoUpload');
+      if(photo) photo.value='';
+      if(video) video.value='';
+      window.applyBackground('./assets/spring.mp4','video',true);
+      window.showToast('↺ 배경 선택을 초기화했습니다 · 다시 선택해주세요');
+    };
+
+    document.getElementById('filePhotoUpload').addEventListener('change',e=>{
+      const files=[...e.target.files];
+      if(!files.length)return;
+      const items=files.map(f=>({blob:f,type:'image',url:URL.createObjectURL(f)}));
+      window.backgroundPlaylistBlobs=[...(window.backgroundPlaylistBlobs||[]),...items.map(x=>({blob:x.blob,type:x.type}))];
+      window.backgroundPlaylist=[...(window.backgroundPlaylist||[]),...items.map(x=>({url:x.url,type:x.type}))];
+      window.customBackgroundBlob=files[0];
+      window.customBackgroundType='image';
+      window.remoteBackgroundUrl=''; window.remoteBackgroundType='';
+      window.backgroundRotationIndex=0;
+      showBackgroundAt(0,true); startBackgroundRotation();
+      window.showToast(`🖼️ 이미지 ${files.length}개 추가`);
+      e.target.value='';
+    });
+    document.getElementById('fileVideoUpload').addEventListener('change',e=>{
+      const files=[...e.target.files];
+      if(!files.length)return;
+      const items=files.map(f=>({blob:f,type:'video',url:URL.createObjectURL(f)}));
+      window.backgroundPlaylistBlobs=[...(window.backgroundPlaylistBlobs||[]),...items.map(x=>({blob:x.blob,type:x.type}))];
+      window.backgroundPlaylist=[...(window.backgroundPlaylist||[]),...items.map(x=>({url:x.url,type:x.type}))];
+      window.customBackgroundBlob=files[0];
+      window.customBackgroundType='video';
+      window.remoteBackgroundUrl=''; window.remoteBackgroundType='';
+      showBackgroundAt(window.backgroundRotationIndex||0,true); startBackgroundRotation();
+      window.showToast(`🎬 영상 ${files.length}개 추가`);
+      e.target.value='';
+    });
+    
+    document.getElementById('voiceFileUpload')?.addEventListener('change',e=>{
+      if(!requireCopyrightConsent()){ e.target.value=''; return; }
+      const f=e.target.files?.[0];
+      if(!f)return;
+      window.recordedAudioBlob=f;
+      window.remoteAudioUrl='';
+      const b=document.getElementById('playAudioBtn');
+      if(b){
+        b.style.display='block';
+        b.textContent='▶ 재생음';
+      }
+      window.showToast('🎧 음성파일 적용 완료');
+      e.target.value='';
+    });
+
+
+    document.getElementById('screenRecordUpload')?.addEventListener('change', e => {
+      if(!requireCopyrightConsent()){ e.target.value=''; return; }
+      const f = e.target.files?.[0];
+      if (!f) return;
+
+      window.screenRecordingBlob = f;
+      window.recordedAudioBlob = f;
+      window.remoteAudioUrl = '';
+
+      const playBtn = document.getElementById('playAudioBtn');
+      if (playBtn) {
+        playBtn.style.display = 'block';
+          const playbackControls=document.getElementById('audioPlaybackControls'); if(playbackControls) playbackControls.style.display='grid';
+        playBtn.textContent = '▶ 화면녹화 소리';
+      }
+
+      const mb = (f.size / (1024 * 1024)).toFixed(1);
+      window.showToast(`📱 화면녹화 적용 · ${mb}MB · 재생으로 확인하세요`);
+      e.target.value = '';
+    });
+
+document.getElementById('fileMeteoriteUpload').addEventListener('click',e=>{ e.currentTarget.value=''; });
+
+document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
+      const f=e.target.files[0];
+      if(!f)return;
+      window.customMeteorBlob=f;
+      window.remoteMeteorUrl='';
+      const handUrl=URL.createObjectURL(f);
+      setHandImageSource(handUrl);
+      window.showToast('🕰️ 시·분·초침 이미지 적용');
+    });
+
+
+
+    window.addEventListener('DOMContentLoaded', () => {
+      const mode = document.getElementById('recordModeSelect');
+      if (!mode) return;
+
+      mode.addEventListener('change', () => {
+        // 권한 요청은 녹음 시작 버튼을 눌렀을 때만 실행한다.
+      });
+    });
+
+
+    const COPYRIGHT_CONSENT_KEY = 'LuxuryWatchCopyrightConsentV1';
+    const COPYRIGHT_CONTACT_EMAIL = ''; // 출시 전 운영자 신고 이메일을 넣으세요.
+
+    function hasCopyrightConsent(){ return localStorage.getItem(COPYRIGHT_CONSENT_KEY) === 'yes'; }
+    function syncCopyrightConsentUI(){ const box=document.getElementById('copyrightConsent'); if(box) box.checked=hasCopyrightConsent(); }
+    function requireCopyrightConsent(){
+      const box=document.getElementById('copyrightConsent');
+      if(hasCopyrightConsent() || box?.checked){
+        localStorage.setItem(COPYRIGHT_CONSENT_KEY,'yes');
+        if(box) box.checked=true;
+        return true;
+      }
+      window.showToast('⚠️ 먼저 미디어 사용 권리 확인에 동의해주세요');
+      openCopyrightGuide();
+      return false;
+    }
+    function openCopyrightModal(title, bodyHtml){
+      const backdrop=document.getElementById('copyrightModalBackdrop');
+      const titleEl=document.getElementById('copyrightModalTitle');
+      const bodyEl=document.getElementById('copyrightModalBody');
+      if(!backdrop||!titleEl||!bodyEl)return;
+      titleEl.textContent=title; bodyEl.innerHTML=bodyHtml; backdrop.classList.add('open');
+    }
+    function closeCopyrightModal(){ document.getElementById('copyrightModalBackdrop')?.classList.remove('open'); }
+    window.closeCopyrightModal=closeCopyrightModal;
+    function openCopyrightGuide(){
+      openCopyrightModal('저작권 및 미디어 사용 안내', `
+        <p>본인이 직접 제작했거나 적법하게 사용할 권한이 있는 미디어만 사용해주세요.</p>
+        <ul>
+          <li>본인이 직접 녹음한 목소리·자작음원: 사용 가능</li>
+          <li>정식 라이선스를 받은 음원·영상: 허용 범위 안에서 사용</li>
+          <li>상업 음원 전체곡의 녹음·업로드·공유는 권리 침해가 될 수 있습니다.</li>
+        </ul>
+        <p>동의 체크는 저작권이 자동으로 해결된다는 의미가 아니라, 업로드할 권한이 있음을 사용자가 확인하는 절차입니다.</p>
+      `);
+    }
+    window.openCopyrightGuide=openCopyrightGuide;
+
+    function openAppInfo(){
+      openCopyrightModal('앱 정보 및 도움말', `
+        <p>Luxury Smartwatch는 편지·목소리·사진·영상 등을 담아 공유하는 디지털 타임피스 편지입니다.</p>
+        <ul>
+          <li>미디어 사용 기준은 <b>저작권 안내</b>에서 확인할 수 있습니다.</li>
+          <li>권리 침해 또는 삭제가 필요한 공유본은 <b>신고·삭제 요청</b>을 이용하세요.</li>
+        </ul>
+        <div class="modal-actions">
+          <button type="button" class="btn-custom" onclick="openCopyrightGuide()">ⓘ 저작권 안내</button>
+          <button type="button" class="btn-custom" onclick="openCopyrightReport()">⚑ 신고·삭제 요청</button>
+        </div>
+      `);
+    }
+    window.openAppInfo=openAppInfo;
+
+    function openCopyrightReport(){
+      const watchId=new URLSearchParams(location.search).get('id')||window.__openedWatchId||'(기본 화면)';
+      const reportText=`Luxury Smartwatch 저작권/삭제 요청\nWatch ID: ${watchId}\n페이지: ${location.href}\n요청 내용: `;
+      const contactLine=COPYRIGHT_CONTACT_EMAIL
+        ? `<p>신고 이메일: <b>${COPYRIGHT_CONTACT_EMAIL}</b></p>`
+        : `<p style="color:#fbbf24">운영자 신고 이메일이 아직 설정되지 않았습니다.</p>`;
+      openCopyrightModal('신고·삭제 요청', `
+        <p>문제가 되는 공유본의 Watch ID와 링크를 운영자에게 보내 삭제 또는 차단을 요청할 수 있습니다.</p>
+        ${contactLine}
+        <p style="margin-top:8px"><b>현재 Watch ID</b><br>${watchId}</p>
+        <div class="modal-actions"><button type="button" class="btn-custom" id="copyCopyrightReportBtn">요청정보 복사</button></div>
+      `);
+      setTimeout(()=>{
+        document.getElementById('copyCopyrightReportBtn')?.addEventListener('click',async()=>{
+          try{ await navigator.clipboard.writeText(reportText); window.showToast('📋 신고·삭제 요청정보 복사 완료'); }
+          catch(_){ prompt('아래 내용을 복사하세요:',reportText); }
+        },{once:true});
+      },0);
+    }
+    window.openCopyrightReport=openCopyrightReport;
+    window.addEventListener('DOMContentLoaded',()=>{
+      syncCopyrightConsentUI();
+      document.getElementById('copyrightConsent')?.addEventListener('change',e=>{
+        if(e.target.checked){ localStorage.setItem(COPYRIGHT_CONSENT_KEY,'yes'); window.showToast('✅ 미디어 사용 권리 확인 저장'); }
+        else localStorage.removeItem(COPYRIGHT_CONSENT_KEY);
+      });
+      document.getElementById('copyrightModalBackdrop')?.addEventListener('click',e=>{ if(e.target.id==='copyrightModalBackdrop') closeCopyrightModal(); });
+    });
+
+    function isMicEnvironmentAvailable() {
+      const isLocalhost = ['localhost','127.0.0.1','::1'].includes(location.hostname);
+      const isHttps = location.protocol === 'https:';
+      return isLocalhost || isHttps;
+    }
+
+    function explainMicEnvironment() {
+      return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+    }
+
+    // ---------- 화면녹화 오디오 가져오기 ----------
+    // MP4/MOV/WebM 파일에서 브라우저가 지원하는 오디오 트랙을 직접 재생한다.
+    // 별도 재인코딩 없이 원본 컨테이너를 사용한다.
+
+    // ---------- 녹음 v2.0.2 : Direct / Maximum Compatibility ----------
+    // Web Audio 가공을 거치지 않고 마이크 스트림을 MediaRecorder에 직접 연결한다.
+    // Chrome / Edge / Android / Safari 계열에서 재생 호환성을 우선한다.
+    let mediaRecorder = null;
+    let audioChunks = [];
+    let recordingSourceStream = null;
+    let currentAudio = null;
+    let currentObjectUrl = null;
+
+    function getBestRecordingOptions() {
+      const candidates = [
+        'audio/webm;codecs=opus',
+        'audio/mp4',
+        'audio/webm',
+        'audio/ogg;codecs=opus'
+      ];
+      for (const mimeType of candidates) {
+        try {
+          if (window.MediaRecorder?.isTypeSupported?.(mimeType)) {
+            return { mimeType, audioBitsPerSecond: 128000 };
+          }
+        } catch (_) {}
+      }
+      return {};
+    }
+
+    function setPlaybackUI(isPlaying){
+      const stopBtn=document.getElementById('stopAudioBtn');
+      const playBtn=document.getElementById('playAudioBtn');
+      if(stopBtn) stopBtn.style.display=isPlaying?'block':'none';
+      if(playBtn) playBtn.textContent=isPlaying?'▶ 재생 중':'▶ 재생';
+    }
+
+    function cleanupCurrentAudio(){
+      try{
+        if(currentAudio){
+          currentAudio.pause();
+          currentAudio.src = '';
+          currentAudio.load();
+        }
+      }catch(_){}
+      currentAudio = null;
+      setPlaybackUI(false);
+
+      if(currentObjectUrl){
+        try{ URL.revokeObjectURL(currentObjectUrl); }catch(_){}
+        currentObjectUrl = null;
+      }
+    }
+
+    function stopRecordedAudio(){
+      try{
+        if(currentAudio){
+          currentAudio.pause();
+          currentAudio.currentTime=0;
+        }
+      }catch(_){}
+      setPlaybackUI(false);
+      window.showToast('■ 재생을 중지했습니다');
+    }
+    window.stopRecordedAudio=stopRecordedAudio;
+
+    function stopMicTracks(){
+      try{
+        recordingSourceStream?.getTracks()?.forEach(t=>t.stop());
+      }catch(_){}
+      recordingSourceStream = null;
+    }
+
+    async function requestMicPermission(){
+      if(location.protocol==='file:') return false;
+      if(!isMicEnvironmentAvailable() || !navigator.mediaDevices?.getUserMedia) return false;
+
+      const mode=document.getElementById('recordModeSelect')?.value||'voice';
+      const audioConstraints=mode==='music'
+        ? {
+            echoCancellation:false,
+            noiseSuppression:false,
+            autoGainControl:false,
+            channelCount:{ideal:2},
+            sampleRate:{ideal:48000}
+          }
+        : {
+            echoCancellation:true,
+            noiseSuppression:true,
+            autoGainControl:true,
+            channelCount:1,
+            sampleRate:{ideal:48000}
+          };
+
+      try{
+        // This call opens the browser's own microphone permission dialog.
+        const stream=await navigator.mediaDevices.getUserMedia({audio:audioConstraints});
+        stream.getTracks().forEach(t=>t.stop());
+        window.__micPermissionGranted=true;
+        speakMicStreamReady=true;
+        return true;
+      }catch(err){
+        window.__micPermissionGranted=false;
+        console.error('Mic permission error:',err);
+        return false;
+      }
+    }
+    window.requestMicPermission=requestMicPermission;
+
+    async function toggleRecording() {
+      const recordBtn = document.getElementById('recordBtn');
+
+      if (!explainMicEnvironment()) {
+        return;
+      }
+
+      if (mediaRecorder && mediaRecorder.state === 'recording') {
+        recordBtn.disabled = true;
+        recordBtn.textContent = '처리 중...';
+        try { mediaRecorder.requestData?.(); } catch (_) {}
+        mediaRecorder.stop();
+        return;
+      }
+
+      try {
+        if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+          window.showToast('❌ 이 브라우저는 녹음을 지원하지 않습니다');
+          return;
+        }
+
+        // 녹음 시작 시 브라우저의 기본 마이크 권한창을 직접 연다.
+        if (!window.__micPermissionGranted) {
+          const allowed = await requestMicPermission();
+          if (!allowed) return;
+        }
+
+        cleanupCurrentAudio();
+        window.recordedAudioBlob = null;
+        window.remoteAudioUrl = '';
+        audioChunks = [];
+
+        const recordMode = document.getElementById('recordModeSelect')?.value || 'voice';
+
+        const audioConstraints = recordMode === 'music'
+          ? {
+              echoCancellation: false,
+              noiseSuppression: false,
+              autoGainControl: false,
+              channelCount: { ideal: 2 },
+              sampleRate: { ideal: 48000 }
+            }
+          : {
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true,
+              channelCount: 1,
+              sampleRate: { ideal: 48000 }
+            };
+
+        recordingSourceStream = await navigator.mediaDevices.getUserMedia({
+          audio: audioConstraints
+        });
+
+        const opts = getBestRecordingOptions();
+        try {
+          mediaRecorder = Object.keys(opts).length
+            ? new MediaRecorder(recordingSourceStream, opts)
+            : new MediaRecorder(recordingSourceStream);
+        } catch (_) {
+          mediaRecorder = new MediaRecorder(recordingSourceStream);
+        }
+
+        mediaRecorder.ondataavailable = e => {
+          if (e.data && e.data.size > 0) audioChunks.push(e.data);
+        };
+
+        mediaRecorder.onerror = e => {
+          console.error('MediaRecorder error:', e);
+          stopMicTracks();
+          recordBtn.disabled = false;
+          recordBtn.classList.remove('recording');
+          recordBtn.textContent = '● 녹음 시작';
+          window.showToast('❌ 녹음 오류');
+        };
+
+        mediaRecorder.onstop = () => {
+          const mime = mediaRecorder?.mimeType || audioChunks[0]?.type || 'audio/webm';
+          const blob = new Blob(audioChunks, { type: mime });
+
+          stopMicTracks();
+          recordBtn.disabled = false;
+          recordBtn.classList.remove('recording');
+          recordBtn.textContent = '● 녹음 시작';
+          const quickVoiceBtn=document.getElementById('quickVoiceBtn');
+          if(quickVoiceBtn){
+            quickVoiceBtn.disabled=false;
+            quickVoiceBtn.classList.remove('recording');
+            quickVoiceBtn.textContent='🔴 목소리 녹음';
+          }
+
+          if (!blob.size) {
+            window.recordedAudioBlob = null;
+            window.showToast('❌ 녹음 데이터가 없습니다');
+            return;
+          }
+
+          window.recordedAudioBlob = blob;
+          window.remoteAudioUrl = '';
+
+          const playBtn = document.getElementById('playAudioBtn');
+          if (playBtn) {
+            playBtn.style.display = 'block';
+          const playbackControls=document.getElementById('audioPlaybackControls'); if(playbackControls) playbackControls.style.display='grid';
+            playBtn.textContent = '▶ 녹음 재생';
+          }
+
+          const kb = Math.max(1, Math.round(blob.size / 1024));
+          const finishedMode = document.getElementById('recordModeSelect')?.value || 'voice';
+          window.showToast(`✅ ${finishedMode === 'music' ? '음악' : '목소리'} 녹음 완료 · ${kb}KB · 재생 버튼을 누르세요`);
+        };
+
+        // timeslice 없이 녹음하여 마지막 파일 헤더/메타데이터 호환성을 높임
+        mediaRecorder.start();
+
+        recordBtn.disabled = false;
+        recordBtn.classList.add('recording');
+        recordBtn.textContent = '■ 녹음 중지';
+        const activeMode = document.getElementById('recordModeSelect')?.value || 'voice';
+        window.showToast(activeMode === 'music'
+          ? '🎵 음악 녹음 중 · 다른 휴대폰과 20~40cm 거리 권장'
+          : '🔴 목소리 녹음 중입니다');
+
+      } catch (err) {
+        console.error('Mic start error:', err);
+        stopMicTracks();
+        recordBtn.disabled = false;
+        recordBtn.classList.remove('recording');
+        recordBtn.textContent = '● 녹음 시작';
+
+        if (err?.name === 'NotAllowedError' || err?.name === 'SecurityError') {
+        } else {
+          window.showToast('❌ 마이크 시작 실패');
+        }
+      }
+    }
+    window.toggleRecording = toggleRecording;
+
+    async function playRecordedAudio() {
+      cleanupCurrentAudio();
+
+      let src = '';
+      if (window.recordedAudioBlob?.size) {
+        currentObjectUrl = URL.createObjectURL(window.recordedAudioBlob);
+        src = currentObjectUrl;
+      } else if (window.remoteAudioUrl) {
+        src = window.remoteAudioUrl;
+      }
+
+      if (!src) {
+        window.showToast('❌ 재생할 녹음소리가 없습니다');
+        return;
+      }
+
+      try {
+        currentAudio = document.getElementById('recordedAudioPlayer');
+        if (!currentAudio) {
+          currentAudio = document.createElement('audio');
+          currentAudio.id = 'recordedAudioPlayer';
+          currentAudio.playsInline = true;
+          currentAudio.preload = 'auto';
+          currentAudio.style.display = 'none';
+          document.body.appendChild(currentAudio);
+        }
+
+        currentAudio.pause();
+        currentAudio.src = src;
+        currentAudio.volume = 1;
+        currentAudio.muted = false;
+        currentAudio.load();
+
+        // 재생 버튼 자체의 사용자 클릭 이벤트 안에서 바로 play() 호출.
+        const promise = currentAudio.play();
+        if (promise) await promise;
+
+        setPlaybackUI(true);
+        window.showToast('🔊 재생 중');
+
+        currentAudio.onended = () => {
+          setPlaybackUI(false);
+          window.showToast('✅ 재생 완료');
+        };
+        currentAudio.onerror = () => {
+          setPlaybackUI(false);
+          console.error('audio element error:', currentAudio.error);
+          window.showToast('❌ 이 파일의 소리 형식을 재생할 수 없습니다 · MP4/AAC 권장');
+        };
+      } catch (err) {
+        setPlaybackUI(false);
+        console.error('Recorded audio playback failed:', err);
+        window.showToast(
+          err?.name === 'NotAllowedError'
+            ? '❌ 화면을 한 번 누른 뒤 다시 재생하세요'
+            : '❌ 녹음 재생 실패'
+        );
+      }
+    }
+    window.playRecordedAudio = playRecordedAudio;
+
+    function testRecordedChime(){
+      if (!window.recordedAudioBlob?.size && !window.remoteAudioUrl) {
+        window.showToast('먼저 녹음해주세요');
+        return;
+      }
+      playRecordedAudio();
+    }
+    window.testRecordedChime = testRecordedChime;
+
+    // ---------- Legacy AI narrator code retained only for backward compatibility; UI disabled ---------- AI 편지 내레이터 v1.5 ----------
+    // 기본: Vercel /api/tts -> OpenAI TTS MP3
+    // 실패 시: 브라우저 speechSynthesis fallback
+    let narrationUtterance = null;
+    let currentNarratorAudio = null;
+    let narratorRequestController = null;
+    let cachedNarratorVoices = [];
+    const NARRATOR_STYLE_VERSION = 'pro-voice-v1';
+    window.aiNarratorStyleVersion = '';
+    window.aiNarratorCacheKey = '';
+
+    function refreshNarratorVoices(){
+      if(!('speechSynthesis' in window)) return [];
+      cachedNarratorVoices = speechSynthesis.getVoices() || [];
+      return cachedNarratorVoices;
+    }
+
+    function getKoreanVoices(){
+      return refreshNarratorVoices().filter(v =>
+        /^ko(?:-|_)/i.test(v.lang || '') || /korean|한국/i.test(v.name || '')
+      );
+    }
+
+    function chooseFallbackVoice(gender){
+      const ko = getKoreanVoices();
+      if(!ko.length) return null;
+      const maleHints = ['male','man','minsu','minjun','injoon','hyunsu','seojun','woojin','남성','남자'];
+      const femaleHints = ['female','woman','yuna','sora','sunhi','heami','yuri','seoyeon','jiyeon','여성','여자'];
+      const hints = gender === 'male' ? maleHints : femaleHints;
+      return ko.find(v => hints.some(h => (v.name || '').toLowerCase().includes(h.toLowerCase())))
+        || (gender === 'female' ? ko[0] : null);
+    }
+
+    function makeWarmNarrationText(rawText){
+      return rawText
+        .replace(/\r\n/g, '\n')
+        .replace(/\n{2,}/g, '. ')
+        .replace(/\n/g, ', ')
+        .replace(/([.!?])\s*/g, '$1  ')
+        .replace(/,{2,}/g, ',')
+        .replace(/\s{3,}/g, '  ')
+        .trim();
+    }
+
+    function stopNarration(){
+      try { narratorRequestController?.abort(); } catch(_) {}
+      narratorRequestController = null;
+
+      if(currentNarratorAudio){
+        try { currentNarratorAudio.pause(); currentNarratorAudio.currentTime = 0; } catch(_) {}
+        currentNarratorAudio = null;
+      }
+
+      if('speechSynthesis' in window){
+        try { speechSynthesis.cancel(); } catch(_) {}
+      }
+
+      window.showToast('■ 내레이터 정지');
+    }
+
+    async function playAiNarratorBlob(blob, gender){
+      if(window.aiNarratorObjectUrl){
+        try { URL.revokeObjectURL(window.aiNarratorObjectUrl); } catch(_) {}
+      }
+
+      window.aiNarratorObjectUrl = URL.createObjectURL(blob);
+      currentNarratorAudio = new Audio(window.aiNarratorObjectUrl);
+
+      currentNarratorAudio.onended = () => {
+        window.showToast('💌 AI 내레이터 읽기 완료');
+      };
+
+      await currentNarratorAudio.play();
+      window.showToast(
+        gender === 'male'
+          ? '🎙 남성 전문 성우 스타일로 읽는 중'
+          : '🎙 여성 전문 성우 스타일로 읽는 중'
+      );
+    }
+
+    async function playRemoteNarrator(url, gender){
+      currentNarratorAudio = new Audio(url);
+      currentNarratorAudio.onended = () => window.showToast('💌 AI 내레이터 읽기 완료');
+      await currentNarratorAudio.play();
+      window.showToast(
+        gender === 'male'
+          ? '🎙 저장된 남성 성우 음성 재생 중'
+          : '🎙 저장된 여성 성우 음성 재생 중'
+      );
+    }
+
+    async function browserNarratorFallback(rawText, gender, mood='warm'){
+      if(!('speechSynthesis' in window)){
+        window.showToast('❌ AI 음성 생성 실패');
+        return;
+      }
+
+      try { speechSynthesis.resume(); } catch(_) {}
+      speechSynthesis.cancel();
+
+      narrationUtterance = new SpeechSynthesisUtterance(makeWarmNarrationText(rawText));
+      narrationUtterance.lang = 'ko-KR';
+      narrationUtterance.volume = 1.0;
+      const moodRate = mood === 'calm' ? 0.88 : (mood === 'bright' ? 1.00 : 0.94);
+      narrationUtterance.rate = moodRate;
+      narrationUtterance.pitch = gender === 'male' ? 0.90 : 1.03;
+
+      const voice = chooseFallbackVoice(gender);
+      if(voice) narrationUtterance.voice = voice;
+
+      narrationUtterance.onstart = () =>
+        window.showToast('📱 브라우저 예비 음성으로 재생 중');
+      narrationUtterance.onend = () =>
+        window.showToast('💌 내레이터 읽기 완료');
+      narrationUtterance.onerror = () =>
+        window.showToast('❌ 내레이터 재생 오류');
+
+      setTimeout(() => {
+        try {
+          speechSynthesis.resume();
+          speechSynthesis.speak(narrationUtterance);
+        } catch(_) {
+          window.showToast('❌ 내레이터 실행 실패');
+        }
+      }, 80);
+    }
+
+    async function regenerateNarration(){
+      try { stopNarration(); } catch(_) {}
+      window.aiNarratorBlob = null;
+      window.remoteNarratorAudioUrl = '';
+      window.aiNarratorStyleVersion = '';
+      window.aiNarratorCacheKey = '';
+      try { await idbSet('aiNarratorAudio', null); } catch(_) {}
+      window.showToast('🎙 전문 성우 음성을 새로 만들고 있습니다...');
+      await playNarration();
+    }
+    window.regenerateNarration = regenerateNarration;
+
+    async function playNarration(){
+      const rawText = document.getElementById('dialContentInput').value.trim();
+      if(!rawText){
+        window.showToast('읽을 편지 내용이 없습니다');
+        return;
+      }
+
+      const gender = document.getElementById('narratorSelect')?.value || 'female';
+      const mood = document.getElementById('narratorMoodSelect')?.value || 'warm';
+      const cacheKey = `${NARRATOR_STYLE_VERSION}|${gender}|${mood}|${rawText}`;
+
+      // 같은 문장으로 이미 생성한 로컬 AI 음성이 있으면 API를 다시 호출하지 않는다.
+      if(window.aiNarratorBlob && window.aiNarratorStyleVersion === NARRATOR_STYLE_VERSION && window.aiNarratorCacheKey === cacheKey){
+        try {
+          await playAiNarratorBlob(window.aiNarratorBlob, gender);
+          return;
+        } catch(err) {
+          console.warn('Local AI narrator play failed:', err);
+        }
+      }
+
+      // 공유받은 링크에 저장된 AI 내레이터가 있으면 그대로 재생한다.
+      if(window.remoteNarratorAudioUrl && !window.aiNarratorCacheKey){
+        try {
+          await playRemoteNarrator(window.remoteNarratorAudioUrl, gender);
+          return;
+        } catch(err) {
+          console.warn('Remote AI narrator play failed:', err);
+        }
+      }
+
+      stopNarration();
+      window.showToast('✨ AI 내레이터 생성 중...');
+
+      try {
+        narratorRequestController = new AbortController();
+
+        const res = await fetch('/api/tts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text: rawText,
+            gender,
+            style: 'professional',
+            mood,
+            styleVersion: NARRATOR_STYLE_VERSION
+          }),
+          signal: narratorRequestController.signal
+        });
+
+        if(!res.ok){
+          let message = `TTS ${res.status}`;
+          try {
+            const data = await res.json();
+            message = data?.error || message;
+          } catch(_) {}
+          throw new Error(message);
+        }
+
+        const blob = await res.blob();
+        if(!blob.size) throw new Error('빈 음성 파일');
+
+        window.aiNarratorBlob = new Blob([blob], { type: blob.type || 'audio/mpeg' });
+        window.aiNarratorStyleVersion = NARRATOR_STYLE_VERSION;
+        window.aiNarratorCacheKey = cacheKey;
+        window.remoteNarratorAudioUrl = '';
+
+        try { await idbSet('aiNarratorAudio', window.aiNarratorBlob); } catch(_) {}
+
+        await playAiNarratorBlob(window.aiNarratorBlob, gender);
+
+      } catch(err) {
+        if(err?.name === 'AbortError') return;
+        console.error('AI Narrator error:', err);
+        window.showToast('⚠️ AI 음성 실패 · 예비 음성 사용');
+        await browserNarratorFallback(rawText, gender, mood);
+      } finally {
+        narratorRequestController = null;
+      }
+    }
+
+    if('speechSynthesis' in window){
+      refreshNarratorVoices();
+      speechSynthesis.addEventListener?.('voiceschanged', refreshNarratorVoices);
+    }
+
+    // ---------- 정시 알림음 v1.8 ----------
+    let lastHourlyKey = '';
+    let chimeAudioContext = null;
+
+    async function unlockChimeAudio(){
+      try{
+        const AC=window.AudioContext||window.webkitAudioContext;
+        if(!AC)return false;
+        if(!chimeAudioContext||chimeAudioContext.state==='closed') chimeAudioContext=new AC();
+        if(chimeAudioContext.state==='suspended') await chimeAudioContext.resume();
+        return true;
+      }catch(e){
+        console.warn('chime unlock failed',e);
+        return false;
+      }
+    }
+
+    ['pointerdown','touchstart','click'].forEach(evt=>{
+      document.addEventListener(evt,unlockChimeAudio,{once:true,passive:true});
+    });
+
+    let activeChimeNodes=[];
+
+    function stopCuckooChime(){
+      activeChimeNodes.forEach(n=>{try{n.stop?.();}catch(_){} try{n.disconnect?.();}catch(_){}});
+      activeChimeNodes=[];
+    }
+
+    async function playCuckooChime(){
+      try{
+        if(!(await unlockChimeAudio())) throw new Error('audio context unavailable');
+        stopCuckooChime();
+        const ctx=chimeAudioContext;
+        const start=ctx.currentTime+0.04;
+        const master=ctx.createGain();
+        const filter=ctx.createBiquadFilter();
+        filter.type='lowpass';
+        filter.frequency.value=1800;
+        filter.Q.value=0.6;
+        master.gain.value=0.85;
+        filter.connect(master);
+        master.connect(ctx.destination);
+        activeChimeNodes.push(master,filter);
+
+        // 실제 뻐꾸기 울음처럼 부드럽게 내려가는 두 음(장3도 근처)을 사용.
+        const notes=[
+          {t:0.00,f:783.99,d:0.28,g:0.22}, // G5
+          {t:0.31,f:622.25,d:0.36,g:0.25}  // Eb5
+        ];
+        notes.forEach(n=>{
+          const osc1=ctx.createOscillator();
+          const osc2=ctx.createOscillator();
+          const gain=ctx.createGain();
+          osc1.type='sine';
+          osc2.type='triangle';
+          osc1.frequency.setValueAtTime(n.f,start+n.t);
+          osc2.frequency.setValueAtTime(n.f*2,start+n.t);
+          const t0=start+n.t, t1=t0+n.d;
+          gain.gain.setValueAtTime(0.0001,t0);
+          gain.gain.exponentialRampToValueAtTime(n.g,t0+0.035);
+          gain.gain.exponentialRampToValueAtTime(n.g*0.55,t0+0.12);
+          gain.gain.exponentialRampToValueAtTime(0.0001,t1);
+          osc1.connect(gain); osc2.connect(gain); gain.connect(filter);
+          osc1.start(t0); osc2.start(t0);
+          osc1.stop(t1+0.02); osc2.stop(t1+0.02);
+          activeChimeNodes.push(osc1,osc2,gain);
+        });
+        setTimeout(()=>{activeChimeNodes=[];},850);
+        return true;
+      }catch(e){
+        console.error('Cuckoo chime error',e);
+        window.showToast('🕰️ 뻐꾸기 재생 실패 · 화면을 한 번 터치 후 다시 테스트하세요');
+        return false;
+      }
+    }
+
+    function stopAllPlayback(){
+      stopCuckooChime();
+      try{
+        if(currentAudio){
+          currentAudio.pause();
+          currentAudio.currentTime=0;
+        }
+      }catch(_){}
+      setPlaybackUI(false);
+      window.showToast('■ 소리를 중지했습니다');
+    }
+    window.stopAllPlayback=stopAllPlayback;
+
+    async function testCuckooChime(){
+      const ok=await playCuckooChime();
+      if(ok) window.showToast('🕰️ 뻐꾸기 테스트');
+    }
+    window.testCuckooChime=testCuckooChime;
+
+    async function testSelectedChime(){
+      const choice=document.getElementById('chimeSelect')?.value;
+      if(choice==='recorded') return testRecordedChime();
+      return testCuckooChime();
+    }
+    window.testSelectedChime=testSelectedChime;
+
+    function playHourlyChime(){ return; }
+
+    function checkHourlyChime(now){ return; }
+
+    // ---------- 상단 UI 위치 이동 ----------
+    const UI_POSITIONS_KEY='LuxuryWatchUIPositionsV1';
+
+    function clamp(v,min,max){ return Math.max(min,Math.min(max,v)); }
+
+    function setElementPosition(el,left,top){
+      if(!el) return;
+      el.style.left=`${Math.round(left)}px`;
+      el.style.top=`${Math.round(top)}px`;
+      el.style.right='auto';
+      el.style.bottom='auto';
+      el.style.transform='none';
+    }
+
+    function getSafeBounds(el){
+      const dial=document.getElementById('dialSunray');
+      if(!dial||!el) return {maxLeft:0,maxTop:0};
+      const d=dial.getBoundingClientRect();
+      const r=el.getBoundingClientRect();
+      return {maxLeft:Math.max(0,d.width-r.width),maxTop:Math.max(0,d.height-r.height)};
+    }
+
+    function placeSafely(el,left,top){
+      if(!el) return;
+      const b=getSafeBounds(el);
+      setElementPosition(el,clamp(Number(left)||0,0,b.maxLeft),clamp(Number(top)||0,0,b.maxTop));
+    }
+
+    function readPositionWithinDial(el){
+      const dial=document.getElementById('dialSunray');
+      if(!dial||!el) return null;
+      const d=dial.getBoundingClientRect();
+      const r=el.getBoundingClientRect();
+      return {left:Math.round(r.left-d.left),top:Math.round(r.top-d.top)};
+    }
+
+    window.getCurrentUIPositions=function(){
+      return {
+        settings:readPositionWithinDial(document.querySelector('.top-controls')),
+        widget:readPositionWithinDial(document.querySelector('.calendar-window'))
+      };
+    };
+
+    window.applyUIPositions=function(pos,saveLocal=false){
+      if(!pos) return;
+      const settings=document.querySelector('.top-controls');
+      const widget=document.querySelector('.calendar-window');
+      if(pos.settings && Number.isFinite(Number(pos.settings.left)) && Number.isFinite(Number(pos.settings.top))){
+        placeSafely(settings,Number(pos.settings.left),Number(pos.settings.top));
+      }
+      if(pos.widget && Number.isFinite(Number(pos.widget.left)) && Number.isFinite(Number(pos.widget.top))){
+        placeSafely(widget,Number(pos.widget.left),Number(pos.widget.top));
+      }
+      if(saveLocal){
+        try{ localStorage.setItem(UI_POSITIONS_KEY,JSON.stringify(window.getCurrentUIPositions())); }catch(_){ }
+      }
+    };
+
+    function saveUIPositionsLocal(){
+      try{ localStorage.setItem(UI_POSITIONS_KEY,JSON.stringify(window.getCurrentUIPositions())); }catch(_){ }
+    }
+
+    window.resetUIPositions=function(){
+      const dial=document.getElementById('dialSunray');
+      const settings=document.querySelector('.top-controls');
+      const widget=document.querySelector('.calendar-window');
+      if(!dial) return;
+      const d=dial.getBoundingClientRect();
+      if(settings){ settings.style.display='block'; settings.style.visibility='visible'; settings.style.opacity='1'; placeSafely(settings,18,18); }
+      if(widget){
+        widget.style.display='flex';
+        widget.style.visibility='visible';
+        widget.style.opacity='1';
+        const wr=widget.getBoundingClientRect();
+        placeSafely(widget,Math.max(0,(d.width-wr.width)/2),18);
+      }
+      saveUIPositionsLocal();
+      window.showToast?.('↺ 위치 초기화 완료');
+    };
+
+    function keepUIInsideDial(){
+      const settings=document.querySelector('.top-controls');
+      const widget=document.querySelector('.calendar-window');
+      [settings,widget].forEach(el=>{
+        if(!el) return;
+        const p=readPositionWithinDial(el);
+        if(p) placeSafely(el,p.left,p.top);
+      });
+    }
+
+    function ensureSettingsButtonVisible(forceDefault=false){
+      const dial=document.getElementById('dialSunray');
+      const settings=document.querySelector('.top-controls');
+      const btn=document.getElementById('mainMenuBtn');
+      if(!dial||!settings||!btn) return;
+
+      settings.style.display='block';
+      settings.style.visibility='visible';
+      settings.style.opacity='1';
+      btn.style.display='flex';
+      btn.style.visibility='visible';
+      btn.style.opacity='1';
+
+      const d=dial.getBoundingClientRect();
+      const b=btn.getBoundingClientRect();
+      const left=b.left-d.left;
+      const top=b.top-d.top;
+
+      const invalid =
+        !Number.isFinite(left) || !Number.isFinite(top) ||
+        b.width < 20 || b.height < 20 ||
+        left < 0 || top < 0 ||
+        left + b.width > d.width ||
+        top + b.height > d.height;
+
+      if(forceDefault || invalid){
+        placeSafely(settings,18,18);
+      }
+    }
+
+    function ensureCalendarWidgetVisible(forceDefault=false){
+      const dial=document.getElementById('dialSunray');
+      const widget=document.querySelector('.calendar-window');
+      if(!dial||!widget) return;
+
+      widget.style.display='flex';
+      widget.style.visibility='visible';
+      widget.style.opacity='1';
+
+      const d=dial.getBoundingClientRect();
+      const w=widget.getBoundingClientRect();
+      const left=w.left-d.left;
+      const top=w.top-d.top;
+
+      const invalid =
+        !Number.isFinite(left) || !Number.isFinite(top) ||
+        w.width < 40 || w.height < 15 ||
+        left < 0 || top < 0 ||
+        left + w.width > d.width ||
+        top + w.height > d.height;
+
+      if(forceDefault || invalid){
+        placeSafely(widget,Math.max(0,(d.width-w.width)/2),18);
+      }
+    }
+
+    function restoreUIPositionsLocal(){
+      let restoredSettings=false, restoredWidget=false;
+      try{
+        const raw=localStorage.getItem(UI_POSITIONS_KEY);
+        if(raw){
+          const pos=JSON.parse(raw);
+          if(pos && pos.settings && Number.isFinite(Number(pos.settings.left)) && Number.isFinite(Number(pos.settings.top))){
+            window.applyUIPositions({settings:pos.settings},false);
+            restoredSettings=true;
+          }
+          if(pos && pos.widget && Number.isFinite(Number(pos.widget.left)) && Number.isFinite(Number(pos.widget.top))){
+            window.applyUIPositions({widget:pos.widget},false);
+            restoredWidget=true;
+          }
+        }
+      }catch(_){ }
+      ensureSettingsButtonVisible(!restoredSettings);
+      ensureCalendarWidgetVisible(!restoredWidget);
+    }
+
+    function makeDraggable(handle,target,{isMenu=false}={}){
+      if(!handle||!target) return;
+      let active=false,startX=0,startY=0,startLeft=0,startTop=0,moved=false,pointerId=null;
+      handle.addEventListener('pointerdown',e=>{
+        if(e.button!==undefined && e.button!==0) return;
+        const dial=document.getElementById('dialSunray');
+        if(!dial) return;
+        const d=dial.getBoundingClientRect();
+        const t=target.getBoundingClientRect();
+        active=true; moved=false; pointerId=e.pointerId;
+        startX=e.clientX; startY=e.clientY;
+        startLeft=t.left-d.left; startTop=t.top-d.top;
+        try{ handle.setPointerCapture(pointerId); }catch(_){ }
+        if(target.classList.contains('calendar-window')) target.classList.add('dragging');
+      },{passive:true});
+      handle.addEventListener('pointermove',e=>{
+        if(!active || e.pointerId!==pointerId) return;
+        const dx=e.clientX-startX, dy=e.clientY-startY;
+        if(Math.hypot(dx,dy)>5) moved=true;
+        if(!moved) return;
+        e.preventDefault();
+        const dial=document.getElementById('dialSunray');
+        if(!dial) return;
+        const d=dial.getBoundingClientRect();
+        const r=target.getBoundingClientRect();
+        const maxLeft=Math.max(0,d.width-r.width);
+        const maxTop=Math.max(0,d.height-r.height);
+        setElementPosition(target,clamp(startLeft+dx,0,maxLeft),clamp(startTop+dy,0,maxTop));
+      },{passive:false});
+      const finish=e=>{
+        if(!active || (e.pointerId!==undefined && e.pointerId!==pointerId)) return;
+        active=false;
+        try{ handle.releasePointerCapture(pointerId); }catch(_){ }
+        target.classList.remove('dragging');
+        if(moved){
+          if(isMenu){
+            window.__suppressMenuClickUntil=Date.now()+300;
+            requestAnimationFrame(relayoutOpenMenus);
+          }
+          saveUIPositionsLocal();
+          window.showToast?.('📌 위치 저장');
+        }
+        pointerId=null;
+      };
+      handle.addEventListener('pointerup',finish);
+      handle.addEventListener('pointercancel',finish);
+    }
+
+    window.addEventListener('DOMContentLoaded',()=>{
+      requestAnimationFrame(()=>{
+        restoreUIPositionsLocal();
+        makeDraggable(document.getElementById('mainMenuBtn'),document.querySelector('.top-controls'),{isMenu:true});
+        makeDraggable(document.querySelector('.calendar-window'),document.querySelector('.calendar-window'));
+        keepUIInsideDial();
+        ensureSettingsButtonVisible(false);
+        ensureCalendarWidgetVisible(false);
+        setTimeout(()=>{ ensureSettingsButtonVisible(false); ensureCalendarWidgetVisible(false); },150);
+        setTimeout(()=>{ ensureSettingsButtonVisible(false); ensureCalendarWidgetVisible(false); },600);
+        document.querySelector('.calendar-window')?.addEventListener('dblclick',()=>window.resetUIPositions());
+      });
+    });
+
+    window.addEventListener('load',()=>{
+      setTimeout(()=>{ ensureSettingsButtonVisible(false); ensureCalendarWidgetVisible(false); },80);
+    });
+
+    window.addEventListener('resize',()=>{
+      clearTimeout(window.__uiSafeResizeTimer);
+      window.__uiSafeResizeTimer=setTimeout(()=>{ keepUIInsideDial(); ensureSettingsButtonVisible(false); ensureCalendarWidgetVisible(false); relayoutOpenMenus(); saveUIPositionsLocal(); },120);
+    });
+
+    // ---------- 메뉴 자동 방향 조정 ----------
+    function clampPanelIntoDial(panel, desiredLeft, desiredTop){
+      const dial=document.getElementById('dialSunray');
+      const controls=document.querySelector('.top-controls');
+      if(!dial||!controls||!panel) return;
+
+      const d=dial.getBoundingClientRect();
+      const c=controls.getBoundingClientRect();
+      const p=panel.getBoundingClientRect();
+
+      const minLeft=d.left-c.left+4;
+      const maxLeft=d.right-c.left-p.width-4;
+      const minTop=d.top-c.top+4;
+      const maxTop=d.bottom-c.top-p.height-4;
+
+      panel.style.left=`${clamp(desiredLeft,minLeft,Math.max(minLeft,maxLeft))}px`;
+      panel.style.top=`${clamp(desiredTop,minTop,Math.max(minTop,maxTop))}px`;
+    }
+
+    function layoutMainMenu(){
+      const dial=document.getElementById('dialSunray');
+      const controls=document.querySelector('.top-controls');
+      const panel=document.getElementById('mainMenuPanel');
+      if(!dial||!controls||!panel||panel.hidden) return;
+
+      const d=dial.getBoundingClientRect();
+      const c=controls.getBoundingClientRect();
+      const p=panel.getBoundingClientRect();
+
+      const roomRight=d.right-(c.left+40);
+      const roomLeft=c.left-d.left;
+      const openRight=roomRight>=p.width+8 || roomRight>=roomLeft;
+      const desiredLeft=openRight ? 39 : -p.width+1;
+
+      const roomBelow=d.bottom-c.top;
+      const roomAbove=c.bottom-d.top;
+      const openDown=roomBelow>=p.height+4 || roomBelow>=roomAbove;
+      const desiredTop=openDown ? 0 : 40-p.height;
+
+      panel.dataset.openSide=openRight?'right':'left';
+      panel.dataset.openVertical=openDown?'down':'up';
+      clampPanelIntoDial(panel,desiredLeft,desiredTop);
+    }
+
+    function layoutSubMenu(panelId){
+      const dial=document.getElementById('dialSunray');
+      const controls=document.querySelector('.top-controls');
+      const main=document.getElementById('mainMenuPanel');
+      const panel=document.getElementById(panelId);
+      if(!dial||!controls||!main||!panel||panel.hidden) return;
+
+      const d=dial.getBoundingClientRect();
+      const c=controls.getBoundingClientRect();
+      const m=main.getBoundingClientRect();
+      const p=panel.getBoundingClientRect();
+
+      // 메인 메뉴가 오른쪽에 열리면 서브 메뉴도 우측, 왼쪽이면 좌측으로 우선 배치
+      const side=main.dataset.openSide || 'right';
+      let globalLeft = side==='right' ? m.right+4 : m.left-p.width-4;
+
+      // 해당 버튼 행 근처에서 열되, 큰 패널은 시계 안에 전부 보이도록 자동 보정
+      const rowOffsets={backgroundPanel:0,soundPanel:40,letterPanel:80,saveSharePanel:120};
+      let globalTop=m.top+(rowOffsets[panelId]||0);
+
+      // 반대쪽에 공간이 더 많으면 자동 반전
+      if(globalLeft+p.width>d.right-4){ globalLeft=m.left-p.width-4; }
+      if(globalLeft<d.left+4){ globalLeft=m.right+4; }
+
+      // 편지·장면 메뉴는 높이가 크므로 아래가 잘리지 않게 먼저 위로 당긴다.
+      if(panelId==='letterPanel' && globalTop+p.height>d.bottom-6){
+        globalTop=Math.max(d.top+6,d.bottom-p.height-6);
+      }
+
+      const desiredLeft=globalLeft-c.left;
+      const desiredTop=globalTop-c.top;
+      clampPanelIntoDial(panel,desiredLeft,desiredTop);
+    }
+
+    function relayoutOpenMenus(){
+      layoutMainMenu();
+      ['backgroundPanel','soundPanel','letterPanel','saveSharePanel'].forEach(id=>{
+        const el=document.getElementById(id);
+        if(el && !el.hidden) layoutSubMenu(id);
+      });
+    }
+
+
+    // ---------- 말로 글쓰기: 녹음 → 서버 음성인식 ----------
+    let speechWriteRecorder = null;
+    let speechWriteStream = null;
+    let speechWriteChunks = [];
+    let speechWriteActive = false;
+    let speechWriteTimer = null;
+    const SPEECH_WRITE_MAX_MS = 45000;
+
+    function setSpeechStatus(text='',isError=false){
+      const el=document.getElementById('speechStatus');
+      if(!el)return;
+      el.textContent=text||'';
+      el.classList.toggle('show',!!text);
+      el.classList.toggle('error',!!isError);
+    }
+
+    function setSpeakWriteButton(active=false,busy=false){
+      const btn=document.getElementById('speakToWriteBtn');
+      if(!btn)return;
+      btn.disabled=!!busy;
+      btn.classList.toggle('listening',!!active);
+      if(busy){
+        btn.textContent='글로 바꾸는 중...';
+      }else{
+        btn.textContent=active ? '■ 말하기 끝' : '🎙 말로 글쓰기';
+      }
+    }
+
+    function stopSpeechWriteTracks(){
+      try{ speechWriteStream?.getTracks?.().forEach(t=>t.stop()); }catch(_){}
+      speechWriteStream=null;
+      if(speechWriteTimer){
+        clearTimeout(speechWriteTimer);
+        speechWriteTimer=null;
+      }
+    }
+
+    async function blobToBase64(blob){
+      const buffer=await blob.arrayBuffer();
+      const bytes=new Uint8Array(buffer);
+      let binary='';
+      const step=0x8000;
+      for(let i=0;i<bytes.length;i+=step){
+        binary += String.fromCharCode(...bytes.subarray(i,i+step));
+      }
+      return btoa(binary);
+    }
+
+    function appendTranscribedText(text){
+      const input=document.getElementById('dialContentInput');
+      if(!input)return;
+
+      const cleaned=String(text||'').trim();
+      if(!cleaned)return;
+
+      const before=input.value.trim();
+      input.value=before ? `${before}\n${cleaned}` : cleaned;
+      input.dispatchEvent(new Event('input',{bubbles:true}));
+      input.scrollTop=input.scrollHeight;
+    }
+
+    async function transcribeSpeechBlob(blob){
+      if(location.protocol==='file:'){
+        setSpeechStatus('Vercel 배포 주소에서 이용해주세요',true);
+        setSpeakWriteButton(false,false);
+        return;
+      }
+
+      setSpeakWriteButton(false,true);
+      setSpeechStatus('글로 바꾸는 중...');
+
+      try{
+        const audioBase64=await blobToBase64(blob);
+        const response=await fetch('/api/transcribe',{
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({
+            audioBase64,
+            mimeType:blob.type||'audio/webm'
+          })
+        });
+
+        const data=await response.json().catch(()=>({}));
+        if(!response.ok){
+          throw new Error(data?.error||`HTTP ${response.status}`);
+        }
+
+        const text=String(data?.text||'').trim();
+        if(!text){
+          setSpeechStatus('말을 인식하지 못했습니다',true);
+          return;
+        }
+
+        appendTranscribedText(text);
+        setSpeechStatus('✓ 글로 작성되었습니다');
+        setTimeout(()=>setSpeechStatus(''),1600);
+
+      }catch(err){
+        console.error('Transcription error:',err);
+        const msg=String(err?.message||'').trim();
+        if(msg.includes('OPENAI_API_KEY')){
+          setSpeechStatus('OpenAI API Key 설정을 확인해주세요',true);
+        }else if(msg.includes('insufficient_quota') || msg.toLowerCase().includes('quota')){
+          setSpeechStatus('OpenAI API 결제/크레딧을 확인해주세요',true);
+        }else if(msg.includes('401') || msg.toLowerCase().includes('invalid api key')){
+          setSpeechStatus('OpenAI API Key가 유효하지 않습니다',true);
+        }else if(msg.includes('404')){
+          setSpeechStatus('/api/transcribe 배포를 확인해주세요',true);
+        }else{
+          setSpeechStatus(msg ? `오류: ${msg.slice(0,90)}` : '음성→글 서버 오류',true);
+        }
+      }finally{
+        setSpeakWriteButton(false,false);
+      }
+    }
+
+    async function toggleSpeakToWrite(){
+      if(speechWriteActive && speechWriteRecorder){
+        setSpeakWriteButton(false,true);
+        setSpeechStatus('글로 바꾸는 중...');
+        try{
+          if(speechWriteRecorder.state==='recording'){
+            speechWriteRecorder.stop();
+          }
+        }catch(err){
+          console.error('Speech write stop error:',err);
+          speechWriteActive=false;
+          stopSpeechWriteTracks();
+          setSpeakWriteButton(false,false);
+        }
+        return;
+      }
+
+      if(location.protocol==='file:'){
+        setSpeechStatus('Vercel 배포 주소에서 이용해주세요',true);
+        return;
+      }
+
+      if(!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder){
+        setSpeechStatus('이 브라우저에서는 이용할 수 없습니다',true);
+        return;
+      }
+
+      setSpeechStatus('');
+      setSpeakWriteButton(false,true);
+
+      try{
+        speechWriteStream=await navigator.mediaDevices.getUserMedia({
+          audio:{
+            echoCancellation:true,
+            noiseSuppression:true,
+            autoGainControl:true,
+            channelCount:1,
+            sampleRate:{ideal:48000}
+          }
+        });
+
+        speechWriteChunks=[];
+
+        let options={};
+        if(MediaRecorder.isTypeSupported?.('audio/webm;codecs=opus')){
+          options={mimeType:'audio/webm;codecs=opus'};
+        }else if(MediaRecorder.isTypeSupported?.('audio/webm')){
+          options={mimeType:'audio/webm'};
+        }
+
+        speechWriteRecorder=new MediaRecorder(speechWriteStream,options);
+
+        speechWriteRecorder.ondataavailable=e=>{
+          if(e.data && e.data.size>0) speechWriteChunks.push(e.data);
+        };
+
+        speechWriteRecorder.onerror=e=>{
+          console.error('Speech write recorder error:',e);
+          speechWriteActive=false;
+          stopSpeechWriteTracks();
+          setSpeakWriteButton(false,false);
+          setSpeechStatus('녹음을 다시 시작해주세요',true);
+        };
+
+        speechWriteRecorder.onstop=async ()=>{
+          const mime=speechWriteRecorder?.mimeType||'audio/webm';
+          const blob=new Blob(speechWriteChunks,{type:mime});
+          speechWriteChunks=[];
+          speechWriteActive=false;
+          speechWriteRecorder=null;
+          stopSpeechWriteTracks();
+
+          if(!blob.size){
+            setSpeakWriteButton(false,false);
+            setSpeechStatus('말을 다시 들려주세요',true);
+            return;
+          }
+
+          await transcribeSpeechBlob(blob);
+        };
+
+        speechWriteRecorder.start(250);
+        speechWriteActive=true;
+        setSpeakWriteButton(true,false);
+        setSpeechStatus('말씀하세요…');
+
+        speechWriteTimer=setTimeout(()=>{
+          if(speechWriteActive && speechWriteRecorder?.state==='recording'){
+            speechWriteRecorder.stop();
+          }
+        },SPEECH_WRITE_MAX_MS);
+
+      }catch(err){
+        console.error('Speech write start error:',err);
+        speechWriteActive=false;
+        stopSpeechWriteTracks();
+        setSpeakWriteButton(false,false);
+
+        if(err?.name==='NotAllowedError' || err?.name==='SecurityError'){
+          setSpeechStatus('마이크 권한을 허용해주세요',true);
+        }else{
+          setSpeechStatus('마이크를 시작할 수 없습니다',true);
+        }
+      }
+    }
+
+    window.toggleSpeakToWrite=toggleSpeakToWrite;
+
+    async function quickToggleVoiceRecord(){
+      const quick=document.getElementById('quickVoiceBtn');
+      const isRecording=mediaRecorder && mediaRecorder.state==='recording';
+      if(quick){
+        quick.disabled=true;
+        quick.textContent=isRecording ? '처리 중...' : '마이크 준비...';
+      }
+      await toggleRecording();
+      setTimeout(()=>{
+        const recordingNow=mediaRecorder && mediaRecorder.state==='recording';
+        if(quick){
+          quick.disabled=false;
+          quick.textContent=recordingNow ? '■ 녹음 끝' : '🔴 목소리 녹음';
+          quick.classList.toggle('recording',!!recordingNow);
+        }
+      },180);
+    }
+    window.quickToggleVoiceRecord=quickToggleVoiceRecord;
+
+    // ---------- 메뉴 ----------
+    function toggleControlPanel(panelId,event){
+      if(window.__suppressMenuClickUntil && Date.now()<window.__suppressMenuClickUntil){ event?.preventDefault(); event?.stopPropagation(); return; }
+      event?.stopPropagation();
+      const target=document.getElementById(panelId);
+      const btn=document.getElementById('mainMenuBtn');
+      const open=target.hidden;
+      document.querySelectorAll('.control-panel').forEach(p=>p.hidden=true);
+      target.hidden=!open;
+      btn?.classList.toggle('opened',open);
+      if(open) requestAnimationFrame(layoutMainMenu);
+    }
+    function toggleSubPanel(panelId,event){
+      event?.stopPropagation();
+      const target=document.getElementById(panelId);
+      const open=target.hidden;
+      ['backgroundPanel','soundPanel','letterPanel','saveSharePanel'].forEach(id=>{
+        const el=document.getElementById(id);
+        if(el) el.hidden=true;
+      });
+      target.hidden=!open;
+      if(open) requestAnimationFrame(()=>{ layoutMainMenu(); layoutSubMenu(panelId); });
+    }
+    document.addEventListener('click',e=>{
+      if(!e.target.closest('.top-controls')){
+        document.querySelectorAll('.control-panel').forEach(p=>p.hidden=true);
+        document.getElementById('mainMenuBtn')?.classList.remove('opened');
+      }
+    });
+
+    // ---------- 스타일 ----------
+    const contentInput=document.getElementById('dialContentInput');
+    document.getElementById('fontFamilySelect').addEventListener('change',e=>contentInput.style.fontFamily=e.target.value);
+    window.updateStorySceneUI?.();
+    document.getElementById('fontSizeSelect').addEventListener('change',e=>contentInput.style.fontSize=e.target.value);
+    document.getElementById('textColorPicker').addEventListener('input',e=>contentInput.style.color=e.target.value);
+    document.getElementById('backgroundIntervalSelect')?.addEventListener('change',e=>{
+      window.backgroundRotationSeconds=Number(e.target.value||15);
+      if((window.backgroundPlaylist||[]).length>1) startBackgroundRotation();
+      window.showToast(`⏱ 배경 전환 ${window.backgroundRotationSeconds}초`);
+    });
+    document.getElementById('backgroundTransitionSelect')?.addEventListener('change',e=>{
+      window.showToast(e.target.value==='soft' ? '✨ 부드러운 전환' : '⚡ 바로 전환');
+    });
+
+    // ---------- 크기 ----------
+    const scaler=document.getElementById('scalerElement');
+    function resizeWatch(){ if(innerWidth<=600){scaler.style.transform='none';return;} const scale=Math.min((innerWidth*.94)/380,(innerHeight*.94)/530); scaler.style.transform=`scale(${scale})`; }
+    addEventListener('resize',resizeWatch); resizeWatch();
+
+    // ---------- 시계 ----------
+    contentInput.addEventListener('input', () => {
+      window.aiNarratorBlob = null;
+      window.remoteNarratorAudioUrl = '';
+    });
+
+    const hourHand=document.getElementById('mainHourHand'),minHand=document.getElementById('mainMinuteHand'),secPivot=document.getElementById('secondHandPivot'),secondMeteoriteWrap=document.getElementById('secondMeteoriteWrap');
+    const hourNumText=document.getElementById('hourNumText'),minNumText=document.getElementById('minNumText');
+    const calYearMonth=document.getElementById('calYearMonth'),calDay=document.getElementById('calDay'),calDate=document.getElementById('calDate');
+    const monthNames=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'],dayNames=['SUN','MON','TUE','WED','THU','FRI','SAT'];
+    function tickWatch(){
+      const now=new Date(),h=now.getHours(),m=now.getMinutes(),s=now.getSeconds(),ms=now.getMilliseconds();
+      checkHourlyChime(now);
+      const secAngle=-((s+ms/1000)/60)*360,minAngle=((m+s/60)/60)*360,hourAngle=(((h%12)+m/60)/12)*360;
+      secPivot.style.transform=`rotate(${secAngle}deg)`; minHand.style.transform=`rotate(${minAngle}deg)`; hourHand.style.transform=`rotate(${hourAngle}deg)`;
+      secondMeteoriteWrap.style.transform=`translate(-50%,-50%) rotate(${-secAngle}deg)`;
+      hourNumText.innerText=h%12===0?12:h%12; minNumText.innerText=String(m).padStart(2,'0');
+      hourNumText.style.transform=`rotate(-${hourAngle}deg)`; minNumText.style.transform=`rotate(-${minAngle}deg)`;
+      calYearMonth.innerText=`${now.getFullYear()} ${monthNames[now.getMonth()]}`; calDay.innerText=dayNames[now.getDay()]; calDate.innerText=String(now.getDate()).padStart(2,'0');
+      requestAnimationFrame(tickWatch);
+    }
+    requestAnimationFrame(tickWatch);
+  </script>
+
+  <button type="button" id="appInfoButton" class="app-info-button" onclick="openAppInfo()">ⓘ 정보</button>
+
+  <div id="copyrightModalBackdrop" class="copyright-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="copyrightModalTitle">
+    <div class="copyright-modal">
+      <h3 id="copyrightModalTitle">저작권 및 미디어 사용 안내</h3>
+      <div id="copyrightModalBody"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn-custom" onclick="closeCopyrightModal()">닫기</button>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>
