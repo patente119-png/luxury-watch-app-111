@@ -6,7 +6,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <title>TIME RELAY - 이어쓰는 시계편지 v2.8.0</title>
+  <title>TIME RELAY - 이어쓰는 시계편지 v2.8.1</title>
   <link rel="preconnect" href="https://fonts.googleapis.com/">
   <link rel="preconnect" href="https://fonts.gstatic.com/" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Inter:wght@400;600;800;900&family=JetBrains+Mono:wght@500;700&family=Nanum+Myeongjo:wght@700;800&family=Noto+Sans+KR:wght@400;700;900&family=Noto+Serif+KR:wght@400;700;900&display=swap" rel="stylesheet">
@@ -1100,7 +1100,7 @@ window.addEventListener('DOMContentLoaded', async () => {
                 <div id="relayFlowBar" class="relay-flow-bar">
                   <div class="relay-card-head">
                     <div id="relayFlowTitle" class="relay-flow-title">당신의 이야기를 남겨주세요</div>
-                    <div class="relay-build-mark">v2.8.0</div>
+                    <div class="relay-build-mark">v2.8.1</div>
                   </div>
 
                   <button type="button" id="speakToWriteBtn" class="relay-main-speak" onclick="toggleSpeakToWrite()">🎙 말로 글쓰기</button>
@@ -2985,7 +2985,18 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
 
       }catch(err){
         console.error('Transcription error:',err);
-        setSpeechStatus('음성→글 서버를 확인해주세요',true);
+        const msg=String(err?.message||'').trim();
+        if(msg.includes('OPENAI_API_KEY')){
+          setSpeechStatus('OpenAI API Key 설정을 확인해주세요',true);
+        }else if(msg.includes('insufficient_quota') || msg.toLowerCase().includes('quota')){
+          setSpeechStatus('OpenAI API 결제/크레딧을 확인해주세요',true);
+        }else if(msg.includes('401') || msg.toLowerCase().includes('invalid api key')){
+          setSpeechStatus('OpenAI API Key가 유효하지 않습니다',true);
+        }else if(msg.includes('404')){
+          setSpeechStatus('/api/transcribe 배포를 확인해주세요',true);
+        }else{
+          setSpeechStatus(msg ? `오류: ${msg.slice(0,90)}` : '음성→글 서버 오류',true);
+        }
       }finally{
         setSpeakWriteButton(false,false);
       }
