@@ -6,7 +6,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <title>TIME RELAY - 이어쓰는 시계편지 v2.9.9</title>
+  <title>TIME RELAY - 이어쓰는 시계편지 v3.0.0</title>
   <link rel="preconnect" href="https://fonts.googleapis.com/">
   <link rel="preconnect" href="https://fonts.gstatic.com/" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Inter:wght@400;600;800;900&family=JetBrains+Mono:wght@500;700&family=Nanum+Myeongjo:wght@700;800&family=Noto+Sans+KR:wght@400;700;900&family=Noto+Serif+KR:wght@400;700;900&display=swap" rel="stylesheet">
@@ -329,6 +329,7 @@ window.addEventListener('DOMContentLoaded', async () => {
       }
 
       window.__openedWatchId = docId;
+      window.__isSharedRelayPage = true;
 
       // 공유 링크를 여는 순간부터 "새 작성자" 상태로 고정한다.
       // Firestore 로딩 전에 글쓰기 버튼을 눌러도 이전 글이 보이지 않는다.
@@ -359,6 +360,7 @@ window.addEventListener('DOMContentLoaded', async () => {
         window.previousRelayText = data.text || '';
         window.previousRelayAudioUrl = data.audioUrl || '';
         window.__incomingRelay = true;
+        window.__isSharedRelayPage = true;
         window.__currentContributionStarted = false;
 
         const input = document.getElementById('dialContentInput');
@@ -1210,7 +1212,7 @@ window.addEventListener('DOMContentLoaded', async () => {
                 </div>
 
                 <div class="top-controls">
-                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v2.9.9">⚙️</button>
+                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v3.0.0">⚙️</button>
 
                   <div id="mainMenuPanel" class="control-panel" style="left:41px;top:0" hidden>
                     <button type="button" class="btn-custom" onclick="toggleSubPanel('backgroundPanel', event)">꾸미기</button>
@@ -1584,7 +1586,9 @@ window.addEventListener('DOMContentLoaded', async () => {
       // 공유받은 이전 사람의 글은 현재 작성창에 넣지 않는다.
       // 이전 글은 Firestore 원본/parentId 계보에 그대로 보존된다.
       window.previousRelayText = data.text || '';
-      if(!window.__incomingRelay){
+      if(window.__isSharedRelayPage){
+        input.value='';
+      }else{
         input.value=data.text||'';
       }
       ff.value=data.fontFamily||"'Noto Sans KR', sans-serif"; input.style.fontFamily=ff.value;
@@ -3413,7 +3417,7 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
       // 공유받은 사람은 "자기 글을 실제로 쓰기 시작하기 전"까지
       // 글쓰기 창을 열 때마다 반드시 빈 칸으로 시작한다.
       // 이전 작성자의 text가 어떤 경로로 화면에 남아 있어도 여기서 제거한다.
-      if(window.__incomingRelay && input && !window.__currentContributionStarted){
+      if(window.__isSharedRelayPage && input && !window.__currentContributionStarted){
         input.value='';
         const nextOrder=Math.max(2,Number(window.currentRelayCount||0)+1);
         input.placeholder=`${nextOrder}번째 이야기를 남겨주세요`;
@@ -3442,6 +3446,7 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
     // 기본 새 편지는 첫 작성자 상태
     if(!new URLSearchParams(location.search).get('id')){
       window.__incomingRelay=false;
+      window.__isSharedRelayPage=false;
       window.__currentContributionStarted=false;
       window.previousRelayText='';
     }
