@@ -6,7 +6,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <title>TIME RELAY - 이어쓰는 시계편지 v2.9.2</title>
+  <title>TIME RELAY - 이어쓰는 시계편지 v2.9.3</title>
   <link rel="preconnect" href="https://fonts.googleapis.com/">
   <link rel="preconnect" href="https://fonts.gstatic.com/" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Inter:wght@400;600;800;900&family=JetBrains+Mono:wght@500;700&family=Nanum+Myeongjo:wght@700;800&family=Noto+Sans+KR:wght@400;700;900&family=Noto+Serif+KR:wght@400;700;900&display=swap" rel="stylesheet">
@@ -1178,7 +1178,7 @@ window.addEventListener('DOMContentLoaded', async () => {
                 </div>
 
                 <div class="top-controls">
-                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v2.9.2">⚙️</button>
+                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v2.9.3">⚙️</button>
 
                   <div id="mainMenuPanel" class="control-panel" style="left:41px;top:0" hidden>
                     <button type="button" class="btn-custom" onclick="toggleSubPanel('soundPanel', event)">작성</button>
@@ -1206,20 +1206,14 @@ window.addEventListener('DOMContentLoaded', async () => {
                   <div id="soundPanel" class="control-panel compact-action-panel" style="left:159px;top:0" hidden>
                     <button type="button" id="speakToWriteBtn" class="btn-custom action-primary" onclick="openCompactWriter('speech')">🎙 말로 글쓰기</button>
                     <button type="button" class="btn-custom" onclick="openCompactWriter('text')">✍ 직접 글쓰기</button>
-                    <button type="button" id="recordBtn" class="btn-custom" onclick="toggleRecording()">🔴 목소리 녹음</button>
-                    <button type="button" id="playAudioBtn" class="btn-custom" onclick="playRecordedAudio()" style="display:none">▶ 목소리 재생</button>
-                    <button type="button" id="stopAudioBtn" class="btn-custom" onclick="stopAllPlayback()" style="display:none">■ 재생 중지</button>
-                    <details class="mini-advanced">
-                      <summary>녹음 설정</summary>
-                      <select id="recordModeSelect" class="style-select">
-                        <option value="voice" selected>🎙 목소리</option>
-                        <option value="music">🎵 음악</option>
-                      </select>
-                      <label class="copyright-consent copyright-consent-compact" for="copyrightConsent">
-                        <input type="checkbox" id="copyrightConsent">
-                        <span>직접 제작·사용 허가 미디어</span>
-                      </label>
-                    </details>
+                    <button type="button" id="recordBtn" class="btn-custom" onclick="toggleRecording()">● 녹음</button>
+                    <button type="button" id="playAudioBtn" class="btn-custom" onclick="playRecordedAudio()" style="display:none">▶ 재생</button>
+                    <button type="button" id="stopAudioBtn" class="btn-custom" onclick="stopAllPlayback()" style="display:none">■ 중지</button>
+
+                    <select id="recordModeSelect" style="display:none" aria-hidden="true">
+                      <option value="voice" selected>voice</option>
+                    </select>
+                    <input type="checkbox" id="copyrightConsent" checked style="display:none" aria-hidden="true">
                     <select id="chimeSelect" style="display:none" aria-hidden="true">
                       <option value="none" selected>없음</option>
                     </select>
@@ -1228,7 +1222,6 @@ window.addEventListener('DOMContentLoaded', async () => {
                   <div id="mediaPanel" class="control-panel compact-action-panel" style="left:159px;top:40px" hidden>
                     <label for="filePhotoUpload" class="btn-custom">📷 사진 추가</label>
                     <label for="fileVideoUpload" class="btn-custom">🎬 영상 추가</label>
-                    <label for="voiceFileUpload" class="btn-custom">🎧 음성 파일</label>
                     <label for="screenRecordUpload" class="btn-custom">📱 화면녹화</label>
                     <input type="file" id="voiceFileUpload" accept="audio/*,.mp3,.m4a,.wav,.webm,.ogg" style="display:none">
                     <input type="file" id="screenRecordUpload" accept="video/mp4,video/*,.mp4,.mov,.m4v,.webm" style="display:none">
@@ -1494,7 +1487,7 @@ window.addEventListener('DOMContentLoaded', async () => {
       window.remoteNarratorAudioUrl=data.narratorAudioUrl||'';
       const playBtn=document.getElementById('playAudioBtn');
       playBtn.style.display=window.remoteAudioUrl?'block':'none';
-      playBtn.textContent='▶ 재생음';
+      playBtn.textContent='▶ 재생';
 
       window.customBackgroundBlob=null;
       window.backgroundPlaylistBlobs=[];
@@ -1934,7 +1927,7 @@ window.addEventListener('DOMContentLoaded', async () => {
       const b=document.getElementById('playAudioBtn');
       if(b){
         b.style.display='block';
-        b.textContent='▶ 재생음';
+        b.textContent='▶ 재생';
       }
       window.showToast('🎧 음성파일 적용 완료');
       e.target.value='';
@@ -2259,7 +2252,7 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
           stopMicTracks();
           recordBtn.disabled = false;
           recordBtn.classList.remove('recording');
-          recordBtn.textContent = '● 녹음 시작';
+          recordBtn.textContent = '● 녹음';
           window.showToast('❌ 녹음 오류');
         };
 
@@ -2270,7 +2263,7 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
           stopMicTracks();
           recordBtn.disabled = false;
           recordBtn.classList.remove('recording');
-          recordBtn.textContent = '● 녹음 시작';
+          recordBtn.textContent = '● 녹음';
           const quickVoiceBtn=document.getElementById('quickVoiceBtn');
           if(quickVoiceBtn){
             quickVoiceBtn.disabled=false;
@@ -2304,7 +2297,7 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
 
         recordBtn.disabled = false;
         recordBtn.classList.add('recording');
-        recordBtn.textContent = '■ 녹음 중지';
+        recordBtn.textContent = '■ 녹음 끝';
         const activeMode = document.getElementById('recordModeSelect')?.value || 'voice';
         window.showToast(activeMode === 'music'
           ? '🎵 음악 녹음 중 · 다른 휴대폰과 20~40cm 거리 권장'
@@ -2315,7 +2308,7 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
         stopMicTracks();
         recordBtn.disabled = false;
         recordBtn.classList.remove('recording');
-        recordBtn.textContent = '● 녹음 시작';
+        recordBtn.textContent = '● 녹음';
 
         if (err?.name === 'NotAllowedError' || err?.name === 'SecurityError') {
         } else {
