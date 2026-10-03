@@ -6,7 +6,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <title>TIME RELAY - 이어쓰는 시계편지 v2.9.8</title>
+  <title>TIME RELAY - 이어쓰는 시계편지 v2.9.9</title>
   <link rel="preconnect" href="https://fonts.googleapis.com/">
   <link rel="preconnect" href="https://fonts.gstatic.com/" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Inter:wght@400;600;800;900&family=JetBrains+Mono:wght@500;700&family=Nanum+Myeongjo:wght@700;800&family=Noto+Sans+KR:wght@400;700;900&family=Noto+Serif+KR:wght@400;700;900&display=swap" rel="stylesheet">
@@ -333,6 +333,7 @@ window.addEventListener('DOMContentLoaded', async () => {
       // 공유 링크를 여는 순간부터 "새 작성자" 상태로 고정한다.
       // Firestore 로딩 전에 글쓰기 버튼을 눌러도 이전 글이 보이지 않는다.
       window.__incomingRelay = true;
+      window.__currentContributionStarted = false;
       window.previousRelayText = '';
       window.previousRelayAudioUrl = '';
       const incomingInput = document.getElementById('dialContentInput');
@@ -358,12 +359,12 @@ window.addEventListener('DOMContentLoaded', async () => {
         window.previousRelayText = data.text || '';
         window.previousRelayAudioUrl = data.audioUrl || '';
         window.__incomingRelay = true;
+        window.__currentContributionStarted = false;
 
         const input = document.getElementById('dialContentInput');
         if (input) {
           // 이전 작성자의 내용은 절대 현재 입력칸으로 복원하지 않는다.
           input.value = '';
-          input.dataset.relayPrepared = '1';
           const nextOrder = Math.max(2, Number(data.relayCount || 0) + 1);
           input.placeholder = `${nextOrder}번째 이야기를 남겨주세요`;
         }
@@ -1209,7 +1210,7 @@ window.addEventListener('DOMContentLoaded', async () => {
                 </div>
 
                 <div class="top-controls">
-                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v2.9.8">⚙️</button>
+                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v2.9.9">⚙️</button>
 
                   <div id="mainMenuPanel" class="control-panel" style="left:41px;top:0" hidden>
                     <button type="button" class="btn-custom" onclick="toggleSubPanel('backgroundPanel', event)">꾸미기</button>
@@ -3219,6 +3220,7 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
 
       const before=input.value.trim();
       input.value=before ? `${before}\n${cleaned}` : cleaned;
+      window.__currentContributionStarted = true;
       input.dispatchEvent(new Event('input',{bubbles:true}));
       input.scrollTop=input.scrollHeight;
     }
@@ -3408,11 +3410,11 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
 
       writer.hidden=false;
 
-      // 릴레이로 받은 편지의 이전 글은 편집창에 넣지 않는다.
-      // 현재 사람이 작성한 내용만 이 입력칸에 유지된다.
-      if(window.__incomingRelay && input && !input.dataset.relayPrepared){
+      // 공유받은 사람은 "자기 글을 실제로 쓰기 시작하기 전"까지
+      // 글쓰기 창을 열 때마다 반드시 빈 칸으로 시작한다.
+      // 이전 작성자의 text가 어떤 경로로 화면에 남아 있어도 여기서 제거한다.
+      if(window.__incomingRelay && input && !window.__currentContributionStarted){
         input.value='';
-        input.dataset.relayPrepared='1';
         const nextOrder=Math.max(2,Number(window.currentRelayCount||0)+1);
         input.placeholder=`${nextOrder}번째 이야기를 남겨주세요`;
       }
@@ -3440,6 +3442,7 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
     // 기본 새 편지는 첫 작성자 상태
     if(!new URLSearchParams(location.search).get('id')){
       window.__incomingRelay=false;
+      window.__currentContributionStarted=false;
       window.previousRelayText='';
     }
     window.closeCompactWriter=closeCompactWriter;
@@ -3495,7 +3498,12 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
     addEventListener('resize',resizeWatch); resizeWatch();
 
     // ---------- 시계 ----------
-    contentInput.addEventListener('input', () => {
+    contentInput.addEventListener('input', (event) => {
+      // 실제 사용자가 글을 쓰거나 음성→글 결과가 들어온 뒤부터는
+      // 그 사람의 현재 초안을 유지한다.
+      if(window.__incomingRelay && contentInput.value.trim()){
+        window.__currentContributionStarted = true;
+      }
       window.aiNarratorBlob = null;
       window.remoteNarratorAudioUrl = '';
       window.__lastShareUrl='';
