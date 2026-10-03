@@ -6,7 +6,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <title>TIME RELAY - 이어쓰는 시계편지 v2.9.7</title>
+  <title>TIME RELAY - 이어쓰는 시계편지 v2.9.8</title>
   <link rel="preconnect" href="https://fonts.googleapis.com/">
   <link rel="preconnect" href="https://fonts.gstatic.com/" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Inter:wght@400;600;800;900&family=JetBrains+Mono:wght@500;700&family=Nanum+Myeongjo:wght@700;800&family=Noto+Sans+KR:wght@400;700;900&family=Noto+Serif+KR:wght@400;700;900&display=swap" rel="stylesheet">
@@ -330,6 +330,18 @@ window.addEventListener('DOMContentLoaded', async () => {
 
       window.__openedWatchId = docId;
 
+      // 공유 링크를 여는 순간부터 "새 작성자" 상태로 고정한다.
+      // Firestore 로딩 전에 글쓰기 버튼을 눌러도 이전 글이 보이지 않는다.
+      window.__incomingRelay = true;
+      window.previousRelayText = '';
+      window.previousRelayAudioUrl = '';
+      const incomingInput = document.getElementById('dialContentInput');
+      if(incomingInput){
+        incomingInput.value = '';
+        incomingInput.dataset.relayPrepared = '1';
+        incomingInput.placeholder = '새 이야기를 남겨주세요';
+      }
+
       try {
         window.showToast?.('📥 편지 불러오는 중...');
         const snap = await getDoc(doc(db, 'watches', docId));
@@ -349,10 +361,11 @@ window.addEventListener('DOMContentLoaded', async () => {
 
         const input = document.getElementById('dialContentInput');
         if (input) {
+          // 이전 작성자의 내용은 절대 현재 입력칸으로 복원하지 않는다.
           input.value = '';
+          input.dataset.relayPrepared = '1';
           const nextOrder = Math.max(2, Number(data.relayCount || 0) + 1);
           input.placeholder = `${nextOrder}번째 이야기를 남겨주세요`;
-          input.dispatchEvent(new Event('input', { bubbles:true }));
         }
 
         window.showToast?.('💌 새 이야기를 남겨주세요');
@@ -1196,7 +1209,7 @@ window.addEventListener('DOMContentLoaded', async () => {
                 </div>
 
                 <div class="top-controls">
-                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v2.9.7">⚙️</button>
+                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v2.9.8">⚙️</button>
 
                   <div id="mainMenuPanel" class="control-panel" style="left:41px;top:0" hidden>
                     <button type="button" class="btn-custom" onclick="toggleSubPanel('backgroundPanel', event)">꾸미기</button>
@@ -1567,7 +1580,12 @@ window.addEventListener('DOMContentLoaded', async () => {
       const tc=document.getElementById('textColorPicker');
       const ch=document.getElementById('chimeSelect');
 
-      input.value=data.text||'';
+      // 공유받은 이전 사람의 글은 현재 작성창에 넣지 않는다.
+      // 이전 글은 Firestore 원본/parentId 계보에 그대로 보존된다.
+      window.previousRelayText = data.text || '';
+      if(!window.__incomingRelay){
+        input.value=data.text||'';
+      }
       ff.value=data.fontFamily||"'Noto Sans KR', sans-serif"; input.style.fontFamily=ff.value;
       fs.value=data.fontSize||'13px'; input.style.fontSize=fs.value;
       tc.value=data.textColor||'#fbcfe8'; input.style.color=tc.value;
@@ -1922,6 +1940,11 @@ window.addEventListener('DOMContentLoaded', async () => {
     }
 
     window.restoreLocalState = async function(){
+      // 공유 링크에서는 이 기기의 과거 로컬 글을 절대 덮어쓰지 않는다.
+      const hasSharedId =
+        !!new URLSearchParams(location.search).get('id') ||
+        !!new URLSearchParams((location.hash||'').replace(/^#/,'')).get('id');
+      if(hasSharedId) return;
       try{
         const raw=localStorage.getItem('LuxuryWatchStandardState');
         if(raw){
@@ -3390,6 +3413,8 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
       if(window.__incomingRelay && input && !input.dataset.relayPrepared){
         input.value='';
         input.dataset.relayPrepared='1';
+        const nextOrder=Math.max(2,Number(window.currentRelayCount||0)+1);
+        input.placeholder=`${nextOrder}번째 이야기를 남겨주세요`;
       }
 
       if(mode==='speech'){
