@@ -6,7 +6,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <title>TIME RELAY - 이어쓰는 시계편지 v3.0.2</title>
+  <title>TIME RELAY - 이어쓰는 시계편지 v3.1.0</title>
   <link rel="preconnect" href="https://fonts.googleapis.com/">
   <link rel="preconnect" href="https://fonts.gstatic.com/" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Inter:wght@400;600;800;900&family=JetBrains+Mono:wght@500;700&family=Nanum+Myeongjo:wght@700;800&family=Noto+Sans+KR:wght@400;700;900&family=Noto+Serif+KR:wght@400;700;900&display=swap" rel="stylesheet">
@@ -114,6 +114,31 @@
         updatedAt: raw.updatedAt || ''
       };
     }
+
+
+    // 완성본용: 마지막 watch에서 parentId를 따라 1번까지 역추적한 뒤
+    // 작성 순서대로 반환한다.
+    window.loadCompletedRelayChain = async function(finalWatchId){
+      const chain=[];
+      const seen=new Set();
+      let currentId=finalWatchId || '';
+
+      while(currentId && !seen.has(currentId) && chain.length < 50){
+        seen.add(currentId);
+        const snap=await getDoc(doc(db,'watches',currentId));
+        if(!snap.exists()) break;
+
+        const data=normalizeWatchData(snap.data());
+        chain.push({
+          id: currentId,
+          ...data
+        });
+        currentId=data.parentId || '';
+      }
+
+      chain.reverse();
+      return chain;
+    };
 
     window.saveToFirestoreAndShare = async function(mode = 'normal') {
       window.ensureCurrentSceneCaptured?.();
@@ -993,6 +1018,115 @@ window.addEventListener('DOMContentLoaded', async () => {
     #letterPanel .style-color-picker{
       opacity:.88;
     }
+    .completed-relay-overlay{
+      position:fixed;
+      inset:0;
+      z-index:999;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding:16px;
+      background:rgba(2,6,23,.90);
+      backdrop-filter:blur(8px);
+    }
+    .completed-relay-overlay[hidden]{display:none;}
+    .completed-relay-sheet{
+      width:min(92vw,520px);
+      max-height:88vh;
+      overflow:hidden;
+      display:flex;
+      flex-direction:column;
+      border:1px solid rgba(125,211,252,.65);
+      border-radius:14px;
+      background:#08111f;
+      box-shadow:0 22px 70px rgba(0,0,0,.75);
+    }
+    .completed-relay-sheet-head{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      padding:12px 14px;
+      border-bottom:1px solid rgba(148,163,184,.25);
+    }
+    .completed-relay-sheet-head h2{
+      margin:0;
+      font-size:16px;
+      color:#e0f2fe;
+    }
+    .completed-relay-sheet-head button{
+      width:30px;
+      height:30px;
+      border:0;
+      border-radius:7px;
+      background:#111827;
+      color:white;
+      font-size:19px;
+      cursor:pointer;
+    }
+    .completed-relay-list{
+      overflow:auto;
+      padding:10px;
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+    }
+    .completed-relay-card{
+      border:1px solid rgba(148,163,184,.36);
+      border-radius:10px;
+      padding:11px;
+      background:rgba(15,23,42,.92);
+    }
+    .completed-relay-card-head{
+      font-size:13px;
+      font-weight:900;
+      color:#7dd3fc;
+      margin-bottom:3px;
+    }
+    .completed-relay-date{
+      font-size:9px;
+      color:#94a3b8;
+      margin-bottom:8px;
+    }
+    .completed-relay-text{
+      white-space:pre-wrap;
+      word-break:break-word;
+      font-size:13px;
+      line-height:1.65;
+      color:#f8fafc;
+    }
+    .completed-relay-media{
+      display:flex;
+      flex-direction:column;
+      gap:7px;
+      margin-top:9px;
+    }
+    .completed-relay-media audio{
+      width:100%;
+      height:36px;
+    }
+    .completed-relay-media img,
+    .completed-relay-media video{
+      width:100%;
+      max-height:220px;
+      object-fit:contain;
+      border-radius:8px;
+      background:#000;
+    }
+    .completed-relay-error{
+      padding:18px;
+      text-align:center;
+      color:#fda4af;
+    }
+    .completed-relay-close{
+      margin:10px;
+      min-height:38px;
+      border:1px solid #86efac;
+      border-radius:8px;
+      background:rgba(22,101,52,.28);
+      color:#dcfce7;
+      font-weight:900;
+      cursor:pointer;
+    }
     .relay-send-panel{width:150px;}
     #relayActiveActions,
     .relay-completed-actions{
@@ -1280,7 +1414,7 @@ window.addEventListener('DOMContentLoaded', async () => {
                 </div>
 
                 <div class="top-controls">
-                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v3.0.2">⚙️</button>
+                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v3.1.0">⚙️</button>
 
                   <div id="mainMenuPanel" class="control-panel" style="left:41px;top:0" hidden>
                     <button type="button" class="btn-custom" onclick="toggleSubPanel('backgroundPanel', event)">꾸미기</button>
@@ -1452,18 +1586,122 @@ window.addEventListener('DOMContentLoaded', async () => {
     }
     window.restoreActiveRelayUI=restoreActiveRelayUI;
 
-    function viewCompletedRelay(){
+    async function viewCompletedRelay(){
+      const overlay=document.getElementById('completedRelayOverlay');
+      const list=document.getElementById('completedRelayList');
+      const title=document.getElementById('completedRelayOverlayTitle');
+
+      if(!overlay || !list)return;
+
       const url=window.__lastShareUrl ||
         (window.__openedWatchId
           ? `https://luxury-watch-app-111.vercel.app/?id=${encodeURIComponent(window.__openedWatchId)}`
           : location.href);
+
+      let finalId=window.__lastSavedDocId || window.__openedWatchId || '';
+      if(!finalId){
+        try{
+          finalId=new URL(url).searchParams.get('id') || '';
+        }catch(_){}
+      }
+
+      if(!finalId){
+        window.showToast('완성본 ID를 찾지 못했습니다');
+        return;
+      }
+
+      overlay.hidden=false;
+      list.innerHTML='';
+      if(title) title.textContent='완성본 불러오는 중...';
+
       try{
-        window.open(url,'_blank','noopener');
-      }catch(_){
-        location.href=url;
+        const chain=await window.loadCompletedRelayChain?.(finalId);
+        if(!Array.isArray(chain) || !chain.length){
+          throw new Error('완성본 기록이 없습니다');
+        }
+
+        if(title) title.textContent=`🏁 ${chain.length}명 릴레이 완성본`;
+
+        chain.forEach((item,index)=>{
+          const card=document.createElement('section');
+          card.className='completed-relay-card';
+
+          const head=document.createElement('div');
+          head.className='completed-relay-card-head';
+          head.textContent=`${index+1}번째 편지`;
+          card.appendChild(head);
+
+          if(item.createdAt){
+            const date=document.createElement('div');
+            date.className='completed-relay-date';
+            try{
+              date.textContent=new Date(item.createdAt).toLocaleString('ko-KR');
+            }catch(_){
+              date.textContent='';
+            }
+            card.appendChild(date);
+          }
+
+          const body=document.createElement('div');
+          body.className='completed-relay-text';
+          body.textContent=(item.text || '').trim() || '글 없이 남긴 편지';
+          card.appendChild(body);
+
+          const media=document.createElement('div');
+          media.className='completed-relay-media';
+
+          if(item.audioUrl){
+            const audio=document.createElement('audio');
+            audio.controls=true;
+            audio.preload='none';
+            audio.src=item.audioUrl;
+            media.appendChild(audio);
+          }
+
+          const bgItem=(Array.isArray(item.backgroundPlaylist) && item.backgroundPlaylist.length)
+            ? item.backgroundPlaylist[0]
+            : (item.backgroundUrl ? {url:item.backgroundUrl,type:item.backgroundType||'image'} : null);
+
+          if(bgItem?.url){
+            if(bgItem.type==='video'){
+              const video=document.createElement('video');
+              video.controls=true;
+              video.preload='metadata';
+              video.playsInline=true;
+              video.src=bgItem.url;
+              media.appendChild(video);
+            }else{
+              const img=document.createElement('img');
+              img.loading='lazy';
+              img.alt=`${index+1}번째 편지 배경`;
+              img.src=bgItem.url;
+              media.appendChild(img);
+            }
+          }
+
+          if(media.childNodes.length) card.appendChild(media);
+          list.appendChild(card);
+        });
+
+      }catch(err){
+        console.error('Completed relay load error:',err);
+        if(title) title.textContent='완성본을 불러오지 못했습니다';
+        const msg=document.createElement('div');
+        msg.className='completed-relay-error';
+        msg.textContent='릴레이 기록을 다시 확인해주세요.';
+        list.appendChild(msg);
       }
     }
     window.viewCompletedRelay=viewCompletedRelay;
+
+    function closeCompletedRelay(){
+      const overlay=document.getElementById('completedRelayOverlay');
+      if(overlay) overlay.hidden=true;
+      document.querySelectorAll('#completedRelayOverlay audio, #completedRelayOverlay video').forEach(el=>{
+        try{el.pause();}catch(_){}
+      });
+    }
+    window.closeCompletedRelay=closeCompletedRelay;
 
     async function copyCompletedLink(){
       await copySavedLink();
@@ -3663,6 +3901,17 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
   </script>
 
   <button type="button" id="appInfoButton" class="app-info-button" onclick="openAppInfo()">ⓘ 정보</button>
+
+  <div id="completedRelayOverlay" class="completed-relay-overlay" hidden>
+    <div class="completed-relay-sheet">
+      <div class="completed-relay-sheet-head">
+        <h2 id="completedRelayOverlayTitle">🏁 릴레이 완성본</h2>
+        <button type="button" onclick="closeCompletedRelay()">×</button>
+      </div>
+      <div id="completedRelayList" class="completed-relay-list"></div>
+      <button type="button" class="completed-relay-close" onclick="closeCompletedRelay()">닫기</button>
+    </div>
+  </div>
 
   <div id="copyrightModalBackdrop" class="copyright-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="copyrightModalTitle">
     <div class="copyright-modal">
