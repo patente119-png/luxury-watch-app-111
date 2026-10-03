@@ -6,7 +6,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <title>TIME RELAY - 이어쓰는 시계편지 v2.9.6</title>
+  <title>TIME RELAY - 이어쓰는 시계편지 v2.9.7</title>
   <link rel="preconnect" href="https://fonts.googleapis.com/">
   <link rel="preconnect" href="https://fonts.gstatic.com/" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Inter:wght@400;600;800;900&family=JetBrains+Mono:wght@500;700&family=Nanum+Myeongjo:wght@700;800&family=Noto+Sans+KR:wght@400;700;900&family=Noto+Serif+KR:wght@400;700;900&display=swap" rel="stylesheet">
@@ -31,6 +31,7 @@
     const storage = getStorage(app);
 
     window.recordedAudioBlob = null;
+    window.recordedAudioSource = '';
     window.remoteAudioUrl = '';
     window.screenRecordingBlob = null;
     window.aiNarratorBlob = null;
@@ -116,7 +117,11 @@
 
     window.saveToFirestoreAndShare = async function(mode = 'normal') {
       window.ensureCurrentSceneCaptured?.();
-      if (window.recordedAudioBlob && !hasCopyrightConsent()) { window.showToast('⚠️ 미디어 사용 권리 확인 후 공유할 수 있습니다'); openCopyrightGuide(); return; }
+      const needsMediaRightsCheck =
+        !!window.recordedAudioBlob &&
+        (window.recordedAudioSource === 'screen' || window.recordedAudioSource === 'file' ||
+         (window.recordedAudioBlob.type || '').startsWith('video/'));
+      if (needsMediaRightsCheck && !requireCopyrightConsent()) return;
       try {
         window.showToast?.('☁️ 클라우드 저장 중...');
 
@@ -1191,7 +1196,7 @@ window.addEventListener('DOMContentLoaded', async () => {
                 </div>
 
                 <div class="top-controls">
-                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v2.9.6">⚙️</button>
+                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v2.9.7">⚙️</button>
 
                   <div id="mainMenuPanel" class="control-panel" style="left:41px;top:0" hidden>
                     <button type="button" class="btn-custom" onclick="toggleSubPanel('backgroundPanel', event)">꾸미기</button>
@@ -1332,6 +1337,7 @@ window.addEventListener('DOMContentLoaded', async () => {
         window.showToast('🏁 이미 완성된 릴레이입니다');
         return;
       }
+      window.showToast('💾 저장하고 링크 만드는 중...');
       window.ensureCurrentSceneCaptured?.();
       await window.saveToFirestoreAndShare('save');
     }
@@ -1360,6 +1366,8 @@ window.addEventListener('DOMContentLoaded', async () => {
     window.copySavedLink=copySavedLink;
 
     async function shareSavedLink(){
+      window.showToast('📨 공유 준비 중...');
+
       let url=window.__lastShareUrl || '';
       let message=window.__lastShareMessage || '';
 
@@ -1368,24 +1376,41 @@ window.addEventListener('DOMContentLoaded', async () => {
         url=window.__lastShareUrl || '';
         message=window.__lastShareMessage || '';
       }
-      if(!url)return;
+
+      if(!url){
+        window.showToast('❌ 링크를 만들지 못했습니다');
+        return;
+      }
+
+      const box=document.getElementById('savedLinkBox');
+      const input=document.getElementById('savedLinkInput');
+      if(input) input.value=url;
+      if(box) box.hidden=false;
 
       if(!message){
         message=`[TIME RELAY · 이어쓰는 시계편지]\n\n👉 시계 열기:\n${url}`;
       }
 
-      try{
-        if(navigator.share){
+      if(navigator.share){
+        try{
           await navigator.share({
             title:'TIME RELAY · 이어쓰는 시계편지',
             text:message
           });
-          window.showToast('💌 공유창을 열었습니다');
+          window.showToast('💌 공유 완료');
           return;
+        }catch(err){
+          // 사용자가 공유창을 닫아도 링크는 화면에 남긴다.
+          console.log('Web Share closed/fallback:', err?.name || err);
         }
-      }catch(_){}
+      }
 
-      await copySavedLink();
+      try{
+        await copySavedLink();
+        window.showToast('📋 공유 링크를 복사했습니다');
+      }catch(_){
+        window.showToast('✅ 링크가 생성되었습니다');
+      }
     }
     window.shareSavedLink=shareSavedLink;
 
@@ -1918,7 +1943,7 @@ window.addEventListener('DOMContentLoaded', async () => {
           window.updateRelayBadge?.();
           window.updateStorySceneUI?.();
         }
-        const audio=await dbGet('audio'); if(audio){window.recordedAudioBlob=audio; const b=document.getElementById('playAudioBtn'); if(b){b.style.display='block'; b.textContent='▶ 재생';} const pc=document.getElementById('audioPlaybackControls'); if(pc) pc.style.display='grid';}
+        const audio=await dbGet('audio'); if(audio){window.recordedAudioBlob=audio; window.recordedAudioSource=(audio.type||'').startsWith('video/')?'screen':'mic'; const b=document.getElementById('playAudioBtn'); if(b){b.style.display='block'; b.textContent='▶ 재생';} const pc=document.getElementById('audioPlaybackControls'); if(pc) pc.style.display='grid';}
         const bg=await dbGet('background'); if(bg?.blob){window.customBackgroundBlob=bg.blob;window.customBackgroundType=bg.type;window.applyBackground(URL.createObjectURL(bg.blob),bg.type);}
         const meteor=await dbGet('meteor');
         if(meteor){
@@ -1990,6 +2015,7 @@ window.addEventListener('DOMContentLoaded', async () => {
       const f=e.target.files?.[0];
       if(!f)return;
       window.recordedAudioBlob=f;
+      window.recordedAudioSource='file';
       window.remoteAudioUrl='';
       const b=document.getElementById('playAudioBtn');
       if(b){
@@ -2008,6 +2034,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 
       window.screenRecordingBlob = f;
       window.recordedAudioBlob = f;
+      window.recordedAudioSource = 'screen';
       window.remoteAudioUrl = '';
 
       const playBtn = document.getElementById('playAudioBtn');
@@ -2276,6 +2303,7 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
 
         cleanupCurrentAudio();
         window.recordedAudioBlob = null;
+        window.recordedAudioSource = '';
         window.remoteAudioUrl = '';
         audioChunks = [];
 
@@ -2345,6 +2373,7 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
           }
 
           window.recordedAudioBlob = blob;
+          window.recordedAudioSource = 'mic';
           window.remoteAudioUrl = '';
 
           const playBtn = document.getElementById('playAudioBtn');
