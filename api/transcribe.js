@@ -1,11 +1,20 @@
 export default async function handler(req, res) {
+  // TIME RELAY: Vercel 배포본뿐 아니라 로컬 index.html(file://)에서도 호출 허용
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  if (req.method === 'OPTIONS') {
+    return res.status(204).end();
+  }
+
   if (req.method === 'GET') {
     return res.status(200).json({
       ok: true,
       route: '/api/transcribe',
       keyConfigured: !!process.env.OPENAI_API_KEY,
       model: 'gpt-4o-mini-transcribe',
-      version: '2.8.3'
+      version: '2.8.4'
     });
   }
 
