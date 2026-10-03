@@ -6,7 +6,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <title>TIME RELAY - 이어쓰는 시계편지 v2.9.4</title>
+  <title>TIME RELAY - 이어쓰는 시계편지 v2.9.5</title>
   <link rel="preconnect" href="https://fonts.googleapis.com/">
   <link rel="preconnect" href="https://fonts.gstatic.com/" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Inter:wght@400;600;800;900&family=JetBrains+Mono:wght@500;700&family=Nanum+Myeongjo:wght@700;800&family=Noto+Sans+KR:wght@400;700;900&family=Noto+Serif+KR:wght@400;700;900&display=swap" rel="stylesheet">
@@ -123,8 +123,9 @@
         const sourceId = new URLSearchParams(location.search).get('id') || null;
         const docId = newWatchId(); // 항상 새 링크 생성
 
-        const isRelay = mode === 'relay';
-        const nextRelayCount = isRelay
+        const isContribution = mode === 'relay' || mode === 'save';
+        const isRelay = isContribution;
+        const nextRelayCount = isContribution
           ? Math.max(1, Number(window.currentRelayCount || 0) + 1)
           : Number(window.currentRelayCount || 0);
 
@@ -255,6 +256,18 @@
         // 방금 저장한 문서를 즉시 다시 읽어, 링크가 실제로 복원 가능한지 확인한다.
         const verifySnap = await getDoc(doc(db, 'watches', docId));
         if (!verifySnap.exists()) throw new Error('Saved document verification failed');
+
+        if (mode === 'save') {
+          window.__lastShareUrl = shareUrl;
+          window.__lastShareMessage = shareMessage;
+          window.__lastSavedDocId = docId;
+          const box=document.getElementById('savedLinkBox');
+          const input=document.getElementById('savedLinkInput');
+          if(input) input.value=shareUrl;
+          if(box) box.hidden=false;
+          window.showToast?.('✅ 저장 완료 · 링크가 생성되었습니다');
+          return shareUrl;
+        }
 
         try {
           if (navigator.share) {
@@ -1178,7 +1191,7 @@ window.addEventListener('DOMContentLoaded', async () => {
                 </div>
 
                 <div class="top-controls">
-                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v2.9.4">⚙️</button>
+                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v2.9.5">⚙️</button>
 
                   <div id="mainMenuPanel" class="control-panel" style="left:41px;top:0" hidden>
                     <button type="button" class="btn-custom" onclick="toggleSubPanel('backgroundPanel', event)">꾸미기</button>
@@ -1251,9 +1264,14 @@ window.addEventListener('DOMContentLoaded', async () => {
                   </div>
 
                   <div id="saveSharePanel" class="control-panel relay-send-panel" style="left:159px;top:80px" hidden>
-                    <button type="button" class="btn-custom" onclick="saveCurrentStateLocally()">💾 저장</button>
-                    <button type="button" class="btn-custom relay-primary-send" onclick="startRelayShare()">📨 다른 사람에게</button>
+                    <button type="button" class="btn-custom" onclick="saveAndCreateLink()">💾 저장</button>
+                    <button type="button" class="btn-custom relay-primary-send" onclick="shareSavedLink()">📨 다른 사람에게</button>
                     <button type="button" class="btn-custom" onclick="completeRelay()">🏁 최종 완성</button>
+                    <div id="savedLinkBox" class="saved-link-box" hidden>
+                      <div class="saved-link-title">링크 생성 완료</div>
+                      <input id="savedLinkInput" type="text" readonly>
+                      <button type="button" class="btn-custom" onclick="copySavedLink()">📋 링크 복사</button>
+                    </div>
                   </div>
                 </div>
 
@@ -1309,14 +1327,70 @@ window.addEventListener('DOMContentLoaded', async () => {
         if(hint) hint.textContent='한 줄을 남겨보세요';
       }
     };
-    async function startRelayShare(){
+    async function saveAndCreateLink(){
       if(window.relayCompleted){
         window.showToast('🏁 이미 완성된 릴레이입니다');
         return;
       }
       window.ensureCurrentSceneCaptured?.();
-      window.showToast('📨 편지를 다음 사람에게 넘깁니다');
-      await window.saveToFirestoreAndShare('relay');
+      await window.saveToFirestoreAndShare('save');
+    }
+    window.saveAndCreateLink=saveAndCreateLink;
+
+    async function copySavedLink(){
+      const url=window.__lastShareUrl || document.getElementById('savedLinkInput')?.value || '';
+      if(!url){
+        window.showToast('먼저 저장해서 링크를 만들어주세요');
+        return;
+      }
+      try{
+        if(navigator.clipboard && window.isSecureContext){
+          await navigator.clipboard.writeText(url);
+        }else{
+          const ta=document.createElement('textarea');
+          ta.value=url; ta.style.position='fixed'; ta.style.opacity='0';
+          document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove();
+        }
+        window.showToast('📋 링크 복사 완료');
+      }catch(err){
+        console.error(err);
+        prompt('아래 링크를 복사하세요:',url);
+      }
+    }
+    window.copySavedLink=copySavedLink;
+
+    async function shareSavedLink(){
+      let url=window.__lastShareUrl || '';
+      let message=window.__lastShareMessage || '';
+
+      if(!url){
+        await saveAndCreateLink();
+        url=window.__lastShareUrl || '';
+        message=window.__lastShareMessage || '';
+      }
+      if(!url)return;
+
+      if(!message){
+        message=`[TIME RELAY · 이어쓰는 시계편지]\n\n👉 시계 열기:\n${url}`;
+      }
+
+      try{
+        if(navigator.share){
+          await navigator.share({
+            title:'TIME RELAY · 이어쓰는 시계편지',
+            text:message
+          });
+          window.showToast('💌 공유창을 열었습니다');
+          return;
+        }
+      }catch(_){}
+
+      await copySavedLink();
+    }
+    window.shareSavedLink=shareSavedLink;
+
+    async function startRelayShare(){
+      await shareSavedLink();
     }
     window.startRelayShare=startRelayShare;
 
@@ -3377,6 +3451,10 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
     contentInput.addEventListener('input', () => {
       window.aiNarratorBlob = null;
       window.remoteNarratorAudioUrl = '';
+      window.__lastShareUrl='';
+      window.__lastShareMessage='';
+      const box=document.getElementById('savedLinkBox');
+      if(box) box.hidden=true;
     });
 
     const hourHand=document.getElementById('mainHourHand'),minHand=document.getElementById('mainMinuteHand'),secPivot=document.getElementById('secondHandPivot'),secondMeteoriteWrap=document.getElementById('secondMeteoriteWrap');
