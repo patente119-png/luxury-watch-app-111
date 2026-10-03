@@ -6,7 +6,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <title>TIME RELAY - 이어쓰는 시계편지 v2.8.1</title>
+  <title>TIME RELAY - 이어쓰는 시계편지 v2.9.0</title>
   <link rel="preconnect" href="https://fonts.googleapis.com/">
   <link rel="preconnect" href="https://fonts.gstatic.com/" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Inter:wght@400;600;800;900&family=JetBrains+Mono:wght@500;700&family=Nanum+Myeongjo:wght@700;800&family=Noto+Sans+KR:wght@400;700;900&family=Noto+Serif+KR:wght@400;700;900&display=swap" rel="stylesheet">
@@ -620,6 +620,69 @@ window.addEventListener('DOMContentLoaded', async () => {
       padding:4px 6px;
       font-size:10px;
     }
+    .compose-panel{
+      width:248px;
+      gap:5px;
+      padding:7px;
+      max-height:356px;
+      overflow:auto;
+    }
+    .compose-panel-title{
+      font-size:11px;
+      font-weight:900;
+      color:#e0f2fe;
+      text-align:center;
+      padding:2px 0 4px;
+    }
+    .compose-primary{
+      min-height:34px;
+      border-color:#7dd3fc!important;
+      color:#e0f2fe!important;
+      background:rgba(14,116,144,.24)!important;
+      font-weight:900!important;
+    }
+    .compose-textarea{
+      width:100%;
+      min-height:86px;
+      max-height:120px;
+      resize:vertical;
+      box-sizing:border-box;
+      border:1px solid rgba(148,163,184,.55);
+      border-radius:6px;
+      outline:none;
+      background:rgba(2,6,23,.82);
+      color:#fbcfe8;
+      padding:8px;
+      font-family:'Noto Sans KR',sans-serif;
+      font-size:11.5px;
+      line-height:1.5;
+    }
+    .compose-textarea::placeholder{color:#94a3b8;}
+    .compose-file-row{
+      display:grid;
+      grid-template-columns:1fr 1fr;
+      gap:4px;
+    }
+    .compose-file-row .btn-custom{font-size:10.5px;padding:6px 4px;}
+    .compose-playback{
+      gap:4px;
+      grid-template-columns:1fr 1fr;
+    }
+    .compose-advanced{
+      border-top:1px solid rgba(148,163,184,.22);
+      padding-top:4px;
+    }
+    .compose-advanced summary{
+      cursor:pointer;
+      font-size:9.5px;
+      font-weight:800;
+      color:#94a3b8;
+      text-align:center;
+      padding:3px 0;
+    }
+    .compose-advanced[open] summary{color:#7dd3fc;}
+    .compose-advanced .style-select{margin-top:4px;}
+
     .sound-panel-compact{
       width:132px;
       gap:3px;
@@ -999,23 +1062,23 @@ window.addEventListener('DOMContentLoaded', async () => {
                 </div>
 
                 <div class="top-controls">
-                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정">⚙️</button>
+                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v2.9.0">⚙️</button>
 
                   <div id="mainMenuPanel" class="control-panel" style="left:41px;top:0" hidden>
+                    <button type="button" class="btn-custom" onclick="toggleSubPanel('soundPanel', event)">작성</button>
                     <button type="button" class="btn-custom" onclick="toggleSubPanel('backgroundPanel', event)">꾸미기</button>
-                    <button type="button" class="btn-custom" onclick="toggleSubPanel('soundPanel', event)">목소리</button>
                     <button type="button" class="btn-custom" onclick="toggleSubPanel('letterPanel', event)">글씨</button>
                     <button type="button" class="btn-custom" onclick="toggleSubPanel('saveSharePanel', event)">보내기</button>
                     <button type="button" class="btn-custom" onclick="resetUIPositions(); event.stopPropagation();">↺ 위치 초기화</button>
                   </div>
 
-                  <div id="backgroundPanel" class="control-panel" style="left:159px;top:0" hidden>
-                    <label for="filePhotoUpload" class="btn-custom">이미지</label>
+                  <div id="backgroundPanel" class="control-panel" style="left:159px;top:40px" hidden>
+                    <label for="filePhotoUpload" class="btn-custom">📷 사진 배경</label>
                     <input type="file" id="filePhotoUpload" accept="image/*" multiple style="display:none">
-                    <label for="fileVideoUpload" class="btn-custom">영상</label>
+                    <label for="fileVideoUpload" class="btn-custom">🎬 영상 배경</label>
                     <input type="file" id="fileVideoUpload" accept="video/*" multiple style="display:none">
-                    <button type="button" class="btn-custom" onclick="resetBackgroundSelection()">↺ 배경 다시 선택</button>
-                    <label for="fileMeteoriteUpload" class="btn-custom">시·분·초침</label>
+                    <button type="button" class="btn-custom" onclick="resetBackgroundSelection()">↺ 기본 배경</button>
+                    <label for="fileMeteoriteUpload" class="btn-custom">🕒 시계침 꾸미기</label>
                     <input type="file" id="fileMeteoriteUpload" accept="image/*" style="display:none">
                     <select id="backgroundIntervalSelect" class="style-select" title="배경 전환 간격">
                       <option value="10">전환 10초</option>
@@ -1025,33 +1088,47 @@ window.addEventListener('DOMContentLoaded', async () => {
                     </select>
                   </div>
 
-                  <div id="soundPanel" class="control-panel sound-panel-compact" style="left:159px;top:40px" hidden>
-                    <select id="recordModeSelect" class="style-select" title="녹음 모드">
-                      <option value="voice" selected>🎙 목소리</option>
-                      <option value="music">🎵 음악</option>
-                    </select>
-                    <div class="sound-action-row">
-                      <button type="button" id="recordBtn" class="btn-custom btn-action-record" onclick="toggleRecording()">● 녹음 시작</button>
-                      <label for="voiceFileUpload" class="btn-custom">🎧 파일</label>
+                  <div id="soundPanel" class="control-panel compose-panel" style="left:159px;top:0" hidden>
+                    <div class="compose-panel-title">이야기 남기기</div>
+
+                    <button type="button" id="speakToWriteBtn" class="btn-custom compose-primary" onclick="toggleSpeakToWrite()">🎙 말로 글쓰기</button>
+                    <div id="speechStatus" class="speech-status"></div>
+
+                    <textarea class="compose-textarea" id="dialContentInput" rows="4" placeholder="말하거나 직접 입력하세요"></textarea>
+
+                    <button type="button" id="recordBtn" class="btn-custom btn-action-record" onclick="toggleRecording()">🔴 목소리 녹음</button>
+
+                    <div class="compose-file-row">
+                      <label for="voiceFileUpload" class="btn-custom">🎧 음성 파일</label>
+                      <label for="screenRecordUpload" class="btn-custom">📱 화면녹화</label>
                     </div>
                     <input type="file" id="voiceFileUpload" accept="audio/*,.mp3,.m4a,.wav,.webm,.ogg" style="display:none">
-                    <label for="screenRecordUpload" class="btn-custom">📱 화면녹화</label>
                     <input type="file" id="screenRecordUpload" accept="video/mp4,video/*,.mp4,.mov,.m4v,.webm" style="display:none">
-                    <div id="audioPlaybackControls" style="display:none;gap:6px;grid-template-columns:1fr 1fr;">
-                      <button type="button" id="playAudioBtn" class="btn-custom" onclick="playRecordedAudio()" style="display:block;background:rgba(236,72,153,.9);color:#fff;font-weight:800">▶ 재생</button>
-                      <button type="button" id="stopAudioBtn" class="btn-custom" onclick="stopAllPlayback()" style="display:none;background:rgba(71,85,105,.95);color:#fff;font-weight:800">■ 중지</button>
+
+                    <div id="audioPlaybackControls" class="compose-playback" style="display:none;">
+                      <button type="button" id="playAudioBtn" class="btn-custom" onclick="playRecordedAudio()" style="display:block">▶ 재생</button>
+                      <button type="button" id="stopAudioBtn" class="btn-custom" onclick="stopAllPlayback()" style="display:none">■ 중지</button>
                     </div>
+
+                    <details class="compose-advanced">
+                      <summary>녹음 설정</summary>
+                      <select id="recordModeSelect" class="style-select" title="녹음 모드">
+                        <option value="voice" selected>🎙 목소리</option>
+                        <option value="music">🎵 음악</option>
+                      </select>
+                      <label class="copyright-consent copyright-consent-compact" for="copyrightConsent">
+                        <input type="checkbox" id="copyrightConsent">
+                        <span>직접 제작·사용 허가 미디어</span>
+                      </label>
+                    </details>
+
                     <select id="chimeSelect" style="display:none" aria-hidden="true">
                       <option value="none" selected>없음</option>
                     </select>
-                    <label class="copyright-consent copyright-consent-compact" for="copyrightConsent">
-                      <input type="checkbox" id="copyrightConsent">
-                      <span>직접 제작·사용 허가 미디어</span>
-                    </label>
                   </div>
 
                   <div id="letterPanel" class="control-panel" style="left:159px;top:80px" hidden>
-                    <div id="relayWritingHint" class="relay-writing-hint">한 줄을 남겨보세요</div>
+                    <div id="relayWritingHint" class="relay-writing-hint">글씨 꾸미기</div>
                     <div class="letter-style-row">
                       <select id="fontFamilySelect" class="style-select" title="글씨체">
                         <option value="'Noto Serif KR', serif">명조</option>
@@ -1096,26 +1173,6 @@ window.addEventListener('DOMContentLoaded', async () => {
                 <div id="relayBadge" class="relay-badge"></div>
 
                 <div id="writingPromptBar" class="writing-prompt-bar"></div>
-
-                <div id="relayFlowBar" class="relay-flow-bar">
-                  <div class="relay-card-head">
-                    <div id="relayFlowTitle" class="relay-flow-title">당신의 이야기를 남겨주세요</div>
-                    <div class="relay-build-mark">v2.8.1</div>
-                  </div>
-
-                  <button type="button" id="speakToWriteBtn" class="relay-main-speak" onclick="toggleSpeakToWrite()">🎙 말로 글쓰기</button>
-                  <div id="speechStatus" class="speech-status"></div>
-
-                  <textarea class="relay-text-preview" id="dialContentInput" rows="3" placeholder="말한 내용이 여기에 글로 표시됩니다"></textarea>
-
-                  <div class="relay-quick-actions relay-media-actions">
-                    <button type="button" id="quickVoiceBtn" onclick="quickToggleVoiceRecord()">🔴 목소리 녹음</button>
-                    <label for="filePhotoUpload">📷 사진 추가</label>
-                    <label for="fileVideoUpload">🎬 영상 추가</label>
-                  </div>
-
-                  <button type="button" class="relay-send-now" onclick="startRelayShare()">📨 다음 사람에게</button>
-                </div>
 
                 <div class="hand-pivot-container">
                   <div class="hand-hour-wrapper" id="mainHourHand"><div class="hour-gold-tip-wrap"><img id="hourGoldImg" class="hour-gold-tip gold-sync-target" alt=""><span id="hourNumText" class="hand-time-text hour-text">12</span></div></div>
@@ -2860,7 +2917,7 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
       let globalLeft = side==='right' ? m.right+4 : m.left-p.width-4;
 
       // 해당 버튼 행 근처에서 열되, 큰 패널은 시계 안에 전부 보이도록 자동 보정
-      const rowOffsets={backgroundPanel:0,soundPanel:40,letterPanel:80,saveSharePanel:120};
+      const rowOffsets={soundPanel:0,backgroundPanel:40,letterPanel:80,saveSharePanel:120};
       let globalTop=m.top+(rowOffsets[panelId]||0);
 
       // 반대쪽에 공간이 더 많으면 자동 반전
@@ -2868,7 +2925,7 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
       if(globalLeft<d.left+4){ globalLeft=m.right+4; }
 
       // 편지·장면 메뉴는 높이가 크므로 아래가 잘리지 않게 먼저 위로 당긴다.
-      if(panelId==='letterPanel' && globalTop+p.height>d.bottom-6){
+      if((panelId==='letterPanel' || panelId==='soundPanel') && globalTop+p.height>d.bottom-6){
         globalTop=Math.max(d.top+6,d.bottom-p.height-6);
       }
 
