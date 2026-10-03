@@ -6,7 +6,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <title>TIME RELAY - 이어쓰는 시계편지 v3.0.1</title>
+  <title>TIME RELAY - 이어쓰는 시계편지 v3.0.2</title>
   <link rel="preconnect" href="https://fonts.googleapis.com/">
   <link rel="preconnect" href="https://fonts.gstatic.com/" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Inter:wght@400;600;800;900&family=JetBrains+Mono:wght@500;700&family=Nanum+Myeongjo:wght@700;800&family=Noto+Sans+KR:wght@400;700;900&family=Noto+Serif+KR:wght@400;700;900&display=swap" rel="stylesheet">
@@ -282,9 +282,11 @@
 
           if(mode === 'complete'){
             if(title) title.textContent=`🏁 ${watchPackage.relayCount}명 릴레이 완성`;
+            window.setCompletedUI?.(watchPackage.relayCount, shareUrl);
             window.showToast?.(`🏁 ${watchPackage.relayCount}명 릴레이 완성`);
           }else{
             if(title) title.textContent='링크 생성 완료';
+            window.restoreActiveRelayUI?.();
             window.showToast?.('✅ 저장 완료 · 링크가 생성되었습니다');
           }
           return shareUrl;
@@ -387,7 +389,15 @@ window.addEventListener('DOMContentLoaded', async () => {
           input.placeholder = `${nextOrder}번째 이야기를 남겨주세요`;
         }
 
-        window.showToast?.('💌 새 이야기를 남겨주세요');
+        if(data.relayCompleted){
+          const completedUrl=`https://luxury-watch-app-111.vercel.app/?id=${encodeURIComponent(docId)}`;
+          window.__lastShareUrl=completedUrl;
+          window.setCompletedUI?.(Number(data.relayCount||0), completedUrl);
+          window.showToast?.(`🏁 ${Number(data.relayCount||0)}명 릴레이 완성본`);
+        }else{
+          window.restoreActiveRelayUI?.();
+          window.showToast?.('💌 새 이야기를 남겨주세요');
+        }
       } catch (err) {
         console.error('Firestore Load Error:', err);
         window.showToast?.('❌ 데이터 로드 오류');
@@ -983,7 +993,49 @@ window.addEventListener('DOMContentLoaded', async () => {
     #letterPanel .style-color-picker{
       opacity:.88;
     }
-    .relay-send-panel{width:136px;}
+    .relay-send-panel{width:150px;}
+    #relayActiveActions,
+    .relay-completed-actions{
+      display:flex;
+      flex-direction:column;
+      gap:4px;
+    }
+    .relay-completed-title{
+      font-size:11px;
+      font-weight:900;
+      text-align:center;
+      color:#dcfce7;
+      padding:6px 4px;
+      border:1px solid rgba(134,239,172,.45);
+      border-radius:6px;
+      background:rgba(22,101,52,.20);
+    }
+    .saved-link-box{
+      margin-top:5px;
+      padding-top:5px;
+      border-top:1px solid rgba(148,163,184,.22);
+    }
+    .saved-link-title{
+      font-size:9.5px;
+      font-weight:900;
+      color:#86efac;
+      text-align:center;
+      margin-bottom:4px;
+    }
+    .saved-link-box input{
+      width:100%;
+      height:28px;
+      border:1px solid #475569;
+      border-radius:5px;
+      background:#020617;
+      color:#cbd5e1;
+      padding:4px 6px;
+      font-size:8.5px;
+      box-sizing:border-box;
+      margin-bottom:4px;
+      user-select:text;
+      -webkit-user-select:text;
+    }
     .relay-primary-send{
       min-height:34px;
       border-color:#7dd3fc!important;
@@ -1228,7 +1280,7 @@ window.addEventListener('DOMContentLoaded', async () => {
                 </div>
 
                 <div class="top-controls">
-                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v3.0.1">⚙️</button>
+                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v3.0.2">⚙️</button>
 
                   <div id="mainMenuPanel" class="control-panel" style="left:41px;top:0" hidden>
                     <button type="button" class="btn-custom" onclick="toggleSubPanel('backgroundPanel', event)">꾸미기</button>
@@ -1301,9 +1353,18 @@ window.addEventListener('DOMContentLoaded', async () => {
                   </div>
 
                   <div id="saveSharePanel" class="control-panel relay-send-panel" style="left:159px;top:80px" hidden>
-                    <button type="button" class="btn-custom" onclick="saveAndCreateLink()">💾 저장</button>
-                    <button type="button" class="btn-custom relay-primary-send" onclick="shareSavedLink()">📨 다른 사람에게</button>
-                    <button type="button" class="btn-custom" onclick="completeRelay()">🏁 최종 완성</button>
+                    <div id="relayActiveActions">
+                      <button type="button" class="btn-custom" onclick="saveAndCreateLink()">💾 저장</button>
+                      <button type="button" class="btn-custom relay-primary-send" onclick="shareSavedLink()">📨 다른 사람에게</button>
+                      <button type="button" class="btn-custom" onclick="completeRelay()">🏁 최종 완성</button>
+                    </div>
+
+                    <div id="relayCompletedActions" class="relay-completed-actions" hidden>
+                      <div id="relayCompletedTitle" class="relay-completed-title">🏁 릴레이 완성</div>
+                      <button type="button" class="btn-custom" onclick="viewCompletedRelay()">👁 완성본 보기</button>
+                      <button type="button" class="btn-custom relay-primary-send" onclick="copyCompletedLink()">📋 완성 링크 복사</button>
+                    </div>
+
                     <div id="savedLinkBox" class="saved-link-box" hidden>
                       <div class="saved-link-title">링크 생성 완료</div>
                       <input id="savedLinkInput" type="text" readonly>
@@ -1364,6 +1425,51 @@ window.addEventListener('DOMContentLoaded', async () => {
         if(hint) hint.textContent='한 줄을 남겨보세요';
       }
     };
+    function setCompletedUI(count, url=''){
+      const active=document.getElementById('relayActiveActions');
+      const done=document.getElementById('relayCompletedActions');
+      const title=document.getElementById('relayCompletedTitle');
+      const linkBox=document.getElementById('savedLinkBox');
+      const linkInput=document.getElementById('savedLinkInput');
+
+      if(active) active.hidden=true;
+      if(done) done.hidden=false;
+      if(title) title.textContent=`🏁 ${Math.max(1,Number(count||0))}명 릴레이 완성`;
+
+      if(url){
+        window.__lastShareUrl=url;
+        if(linkInput) linkInput.value=url;
+      }
+      if(linkBox) linkBox.hidden=true;
+    }
+    window.setCompletedUI=setCompletedUI;
+
+    function restoreActiveRelayUI(){
+      const active=document.getElementById('relayActiveActions');
+      const done=document.getElementById('relayCompletedActions');
+      if(active) active.hidden=false;
+      if(done) done.hidden=true;
+    }
+    window.restoreActiveRelayUI=restoreActiveRelayUI;
+
+    function viewCompletedRelay(){
+      const url=window.__lastShareUrl ||
+        (window.__openedWatchId
+          ? `https://luxury-watch-app-111.vercel.app/?id=${encodeURIComponent(window.__openedWatchId)}`
+          : location.href);
+      try{
+        window.open(url,'_blank','noopener');
+      }catch(_){
+        location.href=url;
+      }
+    }
+    window.viewCompletedRelay=viewCompletedRelay;
+
+    async function copyCompletedLink(){
+      await copySavedLink();
+    }
+    window.copyCompletedLink=copyCompletedLink;
+
     async function saveAndCreateLink(){
       if(window.relayCompleted){
         window.showToast('🏁 이미 완성된 릴레이입니다');
