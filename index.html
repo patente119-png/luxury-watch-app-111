@@ -6,7 +6,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <title>TIME RELAY - 이어쓰는 시계편지 v2.9.5</title>
+  <title>TIME RELAY - 이어쓰는 시계편지 v2.9.6</title>
   <link rel="preconnect" href="https://fonts.googleapis.com/">
   <link rel="preconnect" href="https://fonts.gstatic.com/" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Inter:wght@400;600;800;900&family=JetBrains+Mono:wght@500;700&family=Nanum+Myeongjo:wght@700;800&family=Noto+Sans+KR:wght@400;700;900&family=Noto+Serif+KR:wght@400;700;900&display=swap" rel="stylesheet">
@@ -1191,7 +1191,7 @@ window.addEventListener('DOMContentLoaded', async () => {
                 </div>
 
                 <div class="top-controls">
-                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v2.9.5">⚙️</button>
+                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v2.9.6">⚙️</button>
 
                   <div id="mainMenuPanel" class="control-panel" style="left:41px;top:0" hidden>
                     <button type="button" class="btn-custom" onclick="toggleSubPanel('backgroundPanel', event)">꾸미기</button>
@@ -3172,18 +3172,16 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
     }
 
     async function transcribeSpeechBlob(blob){
-      if(location.protocol==='file:'){
-        setSpeechStatus('Vercel 배포 주소에서 이용해주세요',true);
-        setSpeakWriteButton(false,false);
-        return;
-      }
-
       setSpeakWriteButton(false,true);
       setSpeechStatus('글로 바꾸는 중...');
 
       try{
         const audioBase64=await blobToBase64(blob);
-        const response=await fetch('/api/transcribe',{
+        const transcribeApiUrl = location.protocol === 'file:'
+          ? 'https://luxury-watch-app-111.vercel.app/api/transcribe'
+          : '/api/transcribe';
+
+        const response=await fetch(transcribeApiUrl,{
           method:'POST',
           headers:{'Content-Type':'application/json'},
           body:JSON.stringify({
@@ -3240,11 +3238,6 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
           stopSpeechWriteTracks();
           setSpeakWriteButton(false,false);
         }
-        return;
-      }
-
-      if(location.protocol==='file:'){
-        setSpeechStatus('Vercel 배포 주소에서 이용해주세요',true);
         return;
       }
 
