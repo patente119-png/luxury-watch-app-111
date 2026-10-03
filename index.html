@@ -6,7 +6,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <title>TIME RELAY - 이어쓰는 시계편지 v2.9.3</title>
+  <title>TIME RELAY - 이어쓰는 시계편지 v2.9.4</title>
   <link rel="preconnect" href="https://fonts.googleapis.com/">
   <link rel="preconnect" href="https://fonts.gstatic.com/" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Inter:wght@400;600;800;900&family=JetBrains+Mono:wght@500;700&family=Nanum+Myeongjo:wght@700;800&family=Noto+Sans+KR:wght@400;700;900&family=Noto+Serif+KR:wght@400;700;900&display=swap" rel="stylesheet">
@@ -1178,56 +1178,49 @@ window.addEventListener('DOMContentLoaded', async () => {
                 </div>
 
                 <div class="top-controls">
-                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v2.9.3">⚙️</button>
+                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v2.9.4">⚙️</button>
 
                   <div id="mainMenuPanel" class="control-panel" style="left:41px;top:0" hidden>
-                    <button type="button" class="btn-custom" onclick="toggleSubPanel('soundPanel', event)">작성</button>
-                    <button type="button" class="btn-custom" onclick="toggleSubPanel('mediaPanel', event)">미디어</button>
                     <button type="button" class="btn-custom" onclick="toggleSubPanel('backgroundPanel', event)">꾸미기</button>
+                    <button type="button" class="btn-custom" onclick="toggleSubPanel('soundPanel', event)">쓰기</button>
                     <button type="button" class="btn-custom" onclick="toggleSubPanel('saveSharePanel', event)">보내기</button>
-                    <button type="button" class="btn-custom" onclick="resetUIPositions(); event.stopPropagation();">↺ 위치 초기화</button>
+                    <button type="button" class="btn-custom" onclick="resetUIPositions(); event.stopPropagation();">↺ 위치 복원</button>
                   </div>
 
-                  <div id="backgroundPanel" class="control-panel compact-action-panel" style="left:159px;top:80px" hidden>
-                                        <input type="file" id="filePhotoUpload" accept="image/*" multiple style="display:none">
-                                        <input type="file" id="fileVideoUpload" accept="video/*" multiple style="display:none">
-                    <button type="button" class="btn-custom" onclick="resetBackgroundSelection()">↺ 기본 배경</button>
-                    <label for="fileMeteoriteUpload" class="btn-custom">🕒 시계침 꾸미기</label>
-                    <button type="button" class="btn-custom" onclick="toggleSubPanel('letterPanel', event)">Aa 글씨 꾸미기</button>
-                    <input type="file" id="fileMeteoriteUpload" accept="image/*" style="display:none">
-                    <select id="backgroundIntervalSelect" class="style-select" title="배경 전환 간격">
+                  <div id="backgroundPanel" class="control-panel compact-action-panel" style="left:159px;top:0" hidden>
+                    <label for="filePhotoUpload" class="btn-custom">📷 사진</label>
+                    <label for="fileVideoUpload" class="btn-custom">🎬 영상</label>
+                    <button type="button" class="btn-custom" onclick="resetBackgroundSelection()">↺ 배경 다시 선택</button>
+                    <select id="backgroundIntervalSelect" class="style-select" title="배경 전환">
                       <option value="10">전환 10초</option>
                       <option value="15" selected>전환 15초</option>
                       <option value="30">전환 30초</option>
                       <option value="60">전환 60초</option>
                     </select>
+                    <label for="fileMeteoriteUpload" class="btn-custom">🕒 시침</label>
+                    <input type="file" id="filePhotoUpload" accept="image/*" multiple style="display:none">
+                    <input type="file" id="fileVideoUpload" accept="video/*" multiple style="display:none">
+                    <input type="file" id="fileMeteoriteUpload" accept="image/*" style="display:none">
                   </div>
 
-                  <div id="soundPanel" class="control-panel compact-action-panel" style="left:159px;top:0" hidden>
-                    <button type="button" id="speakToWriteBtn" class="btn-custom action-primary" onclick="openCompactWriter('speech')">🎙 말로 글쓰기</button>
-                    <button type="button" class="btn-custom" onclick="openCompactWriter('text')">✍ 직접 글쓰기</button>
+                  <div id="soundPanel" class="control-panel compact-action-panel" style="left:159px;top:40px" hidden>
+                    <button type="button" id="speakToWriteBtn" class="btn-custom action-primary" onclick="openCompactWriter('speech')">🎙 말로 쓰기</button>
+                    <button type="button" class="btn-custom" onclick="openCompactWriter('text')">✍ 글로 쓰기</button>
                     <button type="button" id="recordBtn" class="btn-custom" onclick="toggleRecording()">● 녹음</button>
-                    <button type="button" id="playAudioBtn" class="btn-custom" onclick="playRecordedAudio()" style="display:none">▶ 재생</button>
-                    <button type="button" id="stopAudioBtn" class="btn-custom" onclick="stopAllPlayback()" style="display:none">■ 중지</button>
-
-                    <select id="recordModeSelect" style="display:none" aria-hidden="true">
-                      <option value="voice" selected>voice</option>
-                    </select>
-                    <input type="checkbox" id="copyrightConsent" checked style="display:none" aria-hidden="true">
-                    <select id="chimeSelect" style="display:none" aria-hidden="true">
-                      <option value="none" selected>없음</option>
-                    </select>
-                  </div>
-
-                  <div id="mediaPanel" class="control-panel compact-action-panel" style="left:159px;top:40px" hidden>
-                    <label for="filePhotoUpload" class="btn-custom">📷 사진 추가</label>
-                    <label for="fileVideoUpload" class="btn-custom">🎬 영상 추가</label>
+                    <button type="button" id="playAudioBtn" class="btn-custom" onclick="playRecordedAudio()">▶ 재생</button>
+                    <button type="button" id="stopAudioBtn" class="btn-custom" onclick="stopAllPlayback()">■ 중지</button>
                     <label for="screenRecordUpload" class="btn-custom">📱 화면녹화</label>
+
                     <input type="file" id="voiceFileUpload" accept="audio/*,.mp3,.m4a,.wav,.webm,.ogg" style="display:none">
                     <input type="file" id="screenRecordUpload" accept="video/mp4,video/*,.mp4,.mov,.m4v,.webm" style="display:none">
+                    <select id="recordModeSelect" style="display:none" aria-hidden="true"><option value="voice" selected>voice</option></select>
+                    <input type="checkbox" id="copyrightConsent" checked style="display:none" aria-hidden="true">
+                    <select id="chimeSelect" style="display:none" aria-hidden="true"><option value="none" selected>없음</option></select>
                   </div>
 
-                  <div id="letterPanel" class="control-panel" style="left:277px;top:80px" hidden>
+                  <div id="mediaPanel" class="control-panel" style="display:none" hidden></div>
+
+                  <div id="letterPanel" class="control-panel" style="display:none" hidden>
                     <div id="relayWritingHint" class="relay-writing-hint">글씨 꾸미기</div>
                     <div class="letter-style-row">
                       <select id="fontFamilySelect" class="style-select" title="글씨체">
@@ -1257,9 +1250,9 @@ window.addEventListener('DOMContentLoaded', async () => {
                     <button type="button" id="storyPlayBtn" onclick="toggleStoryPlayback()" style="display:none" aria-hidden="true"></button>
                   </div>
 
-                  <div id="saveSharePanel" class="control-panel relay-send-panel" style="left:159px;top:120px" hidden>
-                    <button type="button" class="btn-custom" onclick="saveCurrentStateLocally()">💾 임시 저장</button>
-                    <button type="button" class="btn-custom relay-primary-send" onclick="startRelayShare()">📨 다음 사람에게</button>
+                  <div id="saveSharePanel" class="control-panel relay-send-panel" style="left:159px;top:80px" hidden>
+                    <button type="button" class="btn-custom" onclick="saveCurrentStateLocally()">💾 저장</button>
+                    <button type="button" class="btn-custom relay-primary-send" onclick="startRelayShare()">📨 다른 사람에게</button>
                     <button type="button" class="btn-custom" onclick="completeRelay()">🏁 최종 완성</button>
                   </div>
                 </div>
@@ -3017,7 +3010,7 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
       let globalLeft = side==='right' ? m.right+4 : m.left-p.width-4;
 
       // 해당 버튼 행 근처에서 열되, 큰 패널은 시계 안에 전부 보이도록 자동 보정
-      const rowOffsets={soundPanel:0,mediaPanel:40,backgroundPanel:80,letterPanel:80,saveSharePanel:120};
+      const rowOffsets={backgroundPanel:0,soundPanel:40,saveSharePanel:80};
       let globalTop=m.top+(rowOffsets[panelId]||0);
 
       // 반대쪽에 공간이 더 많으면 자동 반전
@@ -3036,7 +3029,7 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
 
     function relayoutOpenMenus(){
       layoutMainMenu();
-      ['soundPanel','mediaPanel','backgroundPanel','letterPanel','saveSharePanel'].forEach(id=>{
+      ['backgroundPanel','soundPanel','saveSharePanel'].forEach(id=>{
         const el=document.getElementById(id);
         if(el && !el.hidden) layoutSubMenu(id);
       });
@@ -3346,7 +3339,7 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
       event?.stopPropagation();
       const target=document.getElementById(panelId);
       const open=target.hidden;
-      ['soundPanel','mediaPanel','backgroundPanel','letterPanel','saveSharePanel'].forEach(id=>{
+      ['backgroundPanel','soundPanel','saveSharePanel'].forEach(id=>{
         const el=document.getElementById(id);
         if(el) el.hidden=true;
       });
