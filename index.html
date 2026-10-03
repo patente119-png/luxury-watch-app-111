@@ -6,7 +6,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <title>TIME RELAY - 이어쓰는 시계편지 v2.9.1</title>
+  <title>TIME RELAY - 이어쓰는 시계편지 v2.9.2</title>
   <link rel="preconnect" href="https://fonts.googleapis.com/">
   <link rel="preconnect" href="https://fonts.gstatic.com/" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Inter:wght@400;600;800;900&family=JetBrains+Mono:wght@500;700&family=Nanum+Myeongjo:wght@700;800&family=Noto+Sans+KR:wght@400;700;900&family=Noto+Serif+KR:wght@400;700;900&display=swap" rel="stylesheet">
@@ -322,7 +322,22 @@ window.addEventListener('DOMContentLoaded', async () => {
 
         const data = normalizeWatchData(snap.data());
         window.applyWatchData?.(data);
-        window.showToast?.('💌 이어서 당신의 이야기를 남겨주세요');
+
+        // 받은 편지는 원본 데이터로 그대로 보존하고,
+        // 다음 작성자는 항상 빈 입력칸에서 새 이야기를 시작한다.
+        window.previousRelayText = data.text || '';
+        window.previousRelayAudioUrl = data.audioUrl || '';
+        window.__incomingRelay = true;
+
+        const input = document.getElementById('dialContentInput');
+        if (input) {
+          input.value = '';
+          const nextOrder = Math.max(2, Number(data.relayCount || 0) + 1);
+          input.placeholder = `${nextOrder}번째 이야기를 남겨주세요`;
+          input.dispatchEvent(new Event('input', { bubbles:true }));
+        }
+
+        window.showToast?.('💌 새 이야기를 남겨주세요');
       } catch (err) {
         console.error('Firestore Load Error:', err);
         window.showToast?.('❌ 데이터 로드 오류');
@@ -1163,7 +1178,7 @@ window.addEventListener('DOMContentLoaded', async () => {
                 </div>
 
                 <div class="top-controls">
-                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v2.9.1">⚙️</button>
+                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v2.9.2">⚙️</button>
 
                   <div id="mainMenuPanel" class="control-panel" style="left:41px;top:0" hidden>
                     <button type="button" class="btn-custom" onclick="toggleSubPanel('soundPanel', event)">작성</button>
@@ -3283,9 +3298,18 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
       const writer=document.getElementById('compactWriter');
       const title=document.getElementById('compactWriterTitle');
       const speechBtn=document.getElementById('compactSpeechBtn');
+      const input=document.getElementById('dialContentInput');
       if(!writer)return;
 
       writer.hidden=false;
+
+      // 릴레이로 받은 편지의 이전 글은 편집창에 넣지 않는다.
+      // 현재 사람이 작성한 내용만 이 입력칸에 유지된다.
+      if(window.__incomingRelay && input && !input.dataset.relayPrepared){
+        input.value='';
+        input.dataset.relayPrepared='1';
+      }
+
       if(mode==='speech'){
         if(title) title.textContent='말로 글쓰기';
         if(speechBtn){
@@ -3295,7 +3319,7 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
       }else{
         if(title) title.textContent='직접 글쓰기';
         if(speechBtn) speechBtn.hidden=true;
-        setTimeout(()=>document.getElementById('dialContentInput')?.focus(),60);
+        setTimeout(()=>input?.focus(),60);
       }
     }
 
@@ -3305,6 +3329,12 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
     }
 
     window.openCompactWriter=openCompactWriter;
+
+    // 기본 새 편지는 첫 작성자 상태
+    if(!new URLSearchParams(location.search).get('id')){
+      window.__incomingRelay=false;
+      window.previousRelayText='';
+    }
     window.closeCompactWriter=closeCompactWriter;
 
     // ---------- 메뉴 ----------
