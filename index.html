@@ -6,7 +6,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <title>TIME RELAY - 이어쓰는 시계편지 v3.0.0</title>
+  <title>TIME RELAY - 이어쓰는 시계편지 v3.0.1</title>
   <link rel="preconnect" href="https://fonts.googleapis.com/">
   <link rel="preconnect" href="https://fonts.gstatic.com/" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Inter:wght@400;600;800;900&family=JetBrains+Mono:wght@500;700&family=Nanum+Myeongjo:wght@700;800&family=Noto+Sans+KR:wght@400;700;900&family=Noto+Serif+KR:wght@400;700;900&display=swap" rel="stylesheet">
@@ -123,12 +123,16 @@
          (window.recordedAudioBlob.type || '').startsWith('video/'));
       if (needsMediaRightsCheck && !requireCopyrightConsent()) return;
       try {
-        window.showToast?.('☁️ 클라우드 저장 중...');
+        window.showToast?.(
+          mode === 'complete'
+            ? '🏁 최종 완성 처리 중...'
+            : '☁️ 저장 중...'
+        );
 
         const sourceId = new URLSearchParams(location.search).get('id') || null;
         const docId = newWatchId(); // 항상 새 링크 생성
 
-        const isContribution = mode === 'relay' || mode === 'save';
+        const isContribution = mode === 'relay' || mode === 'save' || mode === 'complete';
         const isRelay = isContribution;
         const nextRelayCount = isContribution
           ? Math.max(1, Number(window.currentRelayCount || 0) + 1)
@@ -248,7 +252,9 @@
         const base = 'https://luxury-watch-app-111.vercel.app/';
         const shareUrl = `${base}?id=${encodeURIComponent(docId)}`;
         const userText = watchPackage.text.trim();
-        const relayLine = isRelay ? `\n\n🏃 ${watchPackage.relayCount}번째 릴레이 편지` : '';
+        const relayLine = mode === 'complete'
+          ? `\n\n🏁 ${watchPackage.relayCount}명 릴레이 완성`
+          : (isRelay ? `\n\n🏃 ${watchPackage.relayCount}번째 릴레이 편지` : '');
         const shareMessage = `[TIME RELAY · 이어쓰는 시계편지]${relayLine}\n\n${userText}\n\n👉 시계 열기:\n${shareUrl}`;
         window.__lastShareUrl = shareUrl;
         window.currentRelayCount = watchPackage.relayCount;
@@ -262,15 +268,25 @@
         const verifySnap = await getDoc(doc(db, 'watches', docId));
         if (!verifySnap.exists()) throw new Error('Saved document verification failed');
 
-        if (mode === 'save') {
+        if (mode === 'save' || mode === 'complete') {
           window.__lastShareUrl = shareUrl;
           window.__lastShareMessage = shareMessage;
           window.__lastSavedDocId = docId;
+
           const box=document.getElementById('savedLinkBox');
           const input=document.getElementById('savedLinkInput');
+          const title=document.querySelector('#savedLinkBox .saved-link-title');
+
           if(input) input.value=shareUrl;
           if(box) box.hidden=false;
-          window.showToast?.('✅ 저장 완료 · 링크가 생성되었습니다');
+
+          if(mode === 'complete'){
+            if(title) title.textContent=`🏁 ${watchPackage.relayCount}명 릴레이 완성`;
+            window.showToast?.(`🏁 ${watchPackage.relayCount}명 릴레이 완성`);
+          }else{
+            if(title) title.textContent='링크 생성 완료';
+            window.showToast?.('✅ 저장 완료 · 링크가 생성되었습니다');
+          }
           return shareUrl;
         }
 
@@ -1212,7 +1228,7 @@ window.addEventListener('DOMContentLoaded', async () => {
                 </div>
 
                 <div class="top-controls">
-                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v3.0.0">⚙️</button>
+                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v3.0.1">⚙️</button>
 
                   <div id="mainMenuPanel" class="control-panel" style="left:41px;top:0" hidden>
                     <button type="button" class="btn-custom" onclick="toggleSubPanel('backgroundPanel', event)">꾸미기</button>
@@ -1436,15 +1452,20 @@ window.addEventListener('DOMContentLoaded', async () => {
     window.startRelayShare=startRelayShare;
 
     async function completeRelay(){
-      const count=Number(window.currentRelayCount||0);
-      if(count<1){
+      const currentCount=Number(window.currentRelayCount||0);
+      if(currentCount<1){
         window.showToast('먼저 편지를 다음 사람에게 전달해 릴레이를 시작하세요');
         return;
       }
+
+      const currentText=(document.getElementById('dialContentInput')?.value||'').trim();
+      if(!currentText && !window.recordedAudioBlob && !window.customBackgroundBlob && !window.screenRecordingBlob){
+        window.showToast('마지막 이야기를 작성한 뒤 최종 완성해주세요');
+        return;
+      }
+
       window.ensureCurrentSceneCaptured?.();
-      window.relayCompleted=true;
-      window.updateRelayBadge();
-      window.showToast(`🏁 ${count}명 최종 완성`);
+      window.showToast('🏁 최종 완성 처리 중...');
       await window.saveToFirestoreAndShare('complete');
     }
     window.completeRelay=completeRelay;
