@@ -6,7 +6,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <title>TIME RELAY - 이어쓰는 시계편지 v2.9.0</title>
+  <title>TIME RELAY - 이어쓰는 시계편지 v2.9.1</title>
   <link rel="preconnect" href="https://fonts.googleapis.com/">
   <link rel="preconnect" href="https://fonts.gstatic.com/" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Inter:wght@400;600;800;900&family=JetBrains+Mono:wght@500;700&family=Nanum+Myeongjo:wght@700;800&family=Noto+Sans+KR:wght@400;700;900&family=Noto+Serif+KR:wght@400;700;900&display=swap" rel="stylesheet">
@@ -620,6 +620,97 @@ window.addEventListener('DOMContentLoaded', async () => {
       padding:4px 6px;
       font-size:10px;
     }
+    .compact-action-panel{
+      width:136px;
+      max-height:250px;
+      overflow:auto;
+      gap:4px;
+      padding:5px;
+    }
+    .compact-action-panel .btn-custom,
+    .compact-action-panel label.btn-custom{
+      min-height:29px;
+      font-size:10.5px;
+      padding:5px 6px;
+    }
+    .action-primary{
+      border-color:#7dd3fc!important;
+      color:#e0f2fe!important;
+      background:rgba(14,116,144,.24)!important;
+      font-weight:900!important;
+    }
+    .mini-advanced summary{
+      cursor:pointer;
+      font-size:9.5px;
+      color:#94a3b8;
+      text-align:center;
+      padding:3px 0;
+    }
+
+    .compact-writer{
+      position:absolute;
+      left:50%;
+      bottom:22px;
+      transform:translateX(-50%);
+      width:82%;
+      max-width:310px;
+      z-index:95;
+      padding:8px;
+      border:1px solid rgba(125,211,252,.72);
+      border-radius:10px;
+      background:rgba(6,12,24,.96);
+      box-shadow:0 10px 28px rgba(0,0,0,.66);
+      backdrop-filter:blur(10px);
+    }
+    .compact-writer-head{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      margin-bottom:6px;
+      font-size:11px;
+      font-weight:900;
+      color:#e0f2fe;
+    }
+    .compact-writer-head button{
+      width:25px;height:25px;border:0;border-radius:5px;
+      background:#111827;color:#fff;font-size:16px;cursor:pointer;
+    }
+    .compact-writer textarea{
+      width:100%;
+      min-height:92px;
+      box-sizing:border-box;
+      resize:vertical;
+      border:1px solid #475569;
+      border-radius:7px;
+      outline:none;
+      background:#020617;
+      color:#fbcfe8;
+      padding:8px;
+      font-family:'Noto Sans KR',sans-serif;
+      font-size:11.5px;
+      line-height:1.5;
+    }
+    .compact-speech-btn,.compact-writer-done{
+      width:100%;
+      min-height:31px;
+      margin-bottom:6px;
+      border-radius:7px;
+      cursor:pointer;
+      font-size:10.5px;
+      font-weight:900;
+    }
+    .compact-speech-btn{
+      border:1px solid #7dd3fc;
+      background:rgba(14,116,144,.26);
+      color:#e0f2fe;
+    }
+    .compact-writer-done{
+      margin-top:6px;margin-bottom:0;
+      border:1px solid #86efac;
+      background:rgba(22,101,52,.26);
+      color:#dcfce7;
+    }
+
     .compose-panel{
       width:248px;
       gap:5px;
@@ -1055,6 +1146,16 @@ window.addEventListener('DOMContentLoaded', async () => {
             <div class="dial-viewport" id="dialViewport">
               <div class="glass-reflection"></div>
               <div class="watch-toast" id="watchToast">준비 완료</div>
+              <div id="compactWriter" class="compact-writer" hidden>
+                <div class="compact-writer-head">
+                  <span id="compactWriterTitle">글쓰기</span>
+                  <button type="button" onclick="closeCompactWriter()">×</button>
+                </div>
+                <button type="button" id="compactSpeechBtn" class="compact-speech-btn" onclick="toggleSpeakToWrite()" hidden>🎙 말하기 시작</button>
+                <div id="speechStatus" class="speech-status"></div>
+                <textarea id="dialContentInput" rows="5" placeholder="말하거나 직접 입력하세요"></textarea>
+                <button type="button" class="compact-writer-done" onclick="closeCompactWriter()">✓ 완료</button>
+              </div>
 
               <div class="dial-sunray" id="dialSunray">
                 <div id="backgroundLayer" class="background-layer">
@@ -1062,23 +1163,22 @@ window.addEventListener('DOMContentLoaded', async () => {
                 </div>
 
                 <div class="top-controls">
-                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v2.9.0">⚙️</button>
+                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v2.9.1">⚙️</button>
 
                   <div id="mainMenuPanel" class="control-panel" style="left:41px;top:0" hidden>
                     <button type="button" class="btn-custom" onclick="toggleSubPanel('soundPanel', event)">작성</button>
+                    <button type="button" class="btn-custom" onclick="toggleSubPanel('mediaPanel', event)">미디어</button>
                     <button type="button" class="btn-custom" onclick="toggleSubPanel('backgroundPanel', event)">꾸미기</button>
-                    <button type="button" class="btn-custom" onclick="toggleSubPanel('letterPanel', event)">글씨</button>
                     <button type="button" class="btn-custom" onclick="toggleSubPanel('saveSharePanel', event)">보내기</button>
                     <button type="button" class="btn-custom" onclick="resetUIPositions(); event.stopPropagation();">↺ 위치 초기화</button>
                   </div>
 
-                  <div id="backgroundPanel" class="control-panel" style="left:159px;top:40px" hidden>
-                    <label for="filePhotoUpload" class="btn-custom">📷 사진 배경</label>
-                    <input type="file" id="filePhotoUpload" accept="image/*" multiple style="display:none">
-                    <label for="fileVideoUpload" class="btn-custom">🎬 영상 배경</label>
-                    <input type="file" id="fileVideoUpload" accept="video/*" multiple style="display:none">
+                  <div id="backgroundPanel" class="control-panel compact-action-panel" style="left:159px;top:80px" hidden>
+                                        <input type="file" id="filePhotoUpload" accept="image/*" multiple style="display:none">
+                                        <input type="file" id="fileVideoUpload" accept="video/*" multiple style="display:none">
                     <button type="button" class="btn-custom" onclick="resetBackgroundSelection()">↺ 기본 배경</button>
                     <label for="fileMeteoriteUpload" class="btn-custom">🕒 시계침 꾸미기</label>
+                    <button type="button" class="btn-custom" onclick="toggleSubPanel('letterPanel', event)">Aa 글씨 꾸미기</button>
                     <input type="file" id="fileMeteoriteUpload" accept="image/*" style="display:none">
                     <select id="backgroundIntervalSelect" class="style-select" title="배경 전환 간격">
                       <option value="10">전환 10초</option>
@@ -1088,31 +1188,15 @@ window.addEventListener('DOMContentLoaded', async () => {
                     </select>
                   </div>
 
-                  <div id="soundPanel" class="control-panel compose-panel" style="left:159px;top:0" hidden>
-                    <div class="compose-panel-title">이야기 남기기</div>
-
-                    <button type="button" id="speakToWriteBtn" class="btn-custom compose-primary" onclick="toggleSpeakToWrite()">🎙 말로 글쓰기</button>
-                    <div id="speechStatus" class="speech-status"></div>
-
-                    <textarea class="compose-textarea" id="dialContentInput" rows="4" placeholder="말하거나 직접 입력하세요"></textarea>
-
-                    <button type="button" id="recordBtn" class="btn-custom btn-action-record" onclick="toggleRecording()">🔴 목소리 녹음</button>
-
-                    <div class="compose-file-row">
-                      <label for="voiceFileUpload" class="btn-custom">🎧 음성 파일</label>
-                      <label for="screenRecordUpload" class="btn-custom">📱 화면녹화</label>
-                    </div>
-                    <input type="file" id="voiceFileUpload" accept="audio/*,.mp3,.m4a,.wav,.webm,.ogg" style="display:none">
-                    <input type="file" id="screenRecordUpload" accept="video/mp4,video/*,.mp4,.mov,.m4v,.webm" style="display:none">
-
-                    <div id="audioPlaybackControls" class="compose-playback" style="display:none;">
-                      <button type="button" id="playAudioBtn" class="btn-custom" onclick="playRecordedAudio()" style="display:block">▶ 재생</button>
-                      <button type="button" id="stopAudioBtn" class="btn-custom" onclick="stopAllPlayback()" style="display:none">■ 중지</button>
-                    </div>
-
-                    <details class="compose-advanced">
+                  <div id="soundPanel" class="control-panel compact-action-panel" style="left:159px;top:0" hidden>
+                    <button type="button" id="speakToWriteBtn" class="btn-custom action-primary" onclick="openCompactWriter('speech')">🎙 말로 글쓰기</button>
+                    <button type="button" class="btn-custom" onclick="openCompactWriter('text')">✍ 직접 글쓰기</button>
+                    <button type="button" id="recordBtn" class="btn-custom" onclick="toggleRecording()">🔴 목소리 녹음</button>
+                    <button type="button" id="playAudioBtn" class="btn-custom" onclick="playRecordedAudio()" style="display:none">▶ 목소리 재생</button>
+                    <button type="button" id="stopAudioBtn" class="btn-custom" onclick="stopAllPlayback()" style="display:none">■ 재생 중지</button>
+                    <details class="mini-advanced">
                       <summary>녹음 설정</summary>
-                      <select id="recordModeSelect" class="style-select" title="녹음 모드">
+                      <select id="recordModeSelect" class="style-select">
                         <option value="voice" selected>🎙 목소리</option>
                         <option value="music">🎵 음악</option>
                       </select>
@@ -1121,13 +1205,21 @@ window.addEventListener('DOMContentLoaded', async () => {
                         <span>직접 제작·사용 허가 미디어</span>
                       </label>
                     </details>
-
                     <select id="chimeSelect" style="display:none" aria-hidden="true">
                       <option value="none" selected>없음</option>
                     </select>
                   </div>
 
-                  <div id="letterPanel" class="control-panel" style="left:159px;top:80px" hidden>
+                  <div id="mediaPanel" class="control-panel compact-action-panel" style="left:159px;top:40px" hidden>
+                    <label for="filePhotoUpload" class="btn-custom">📷 사진 추가</label>
+                    <label for="fileVideoUpload" class="btn-custom">🎬 영상 추가</label>
+                    <label for="voiceFileUpload" class="btn-custom">🎧 음성 파일</label>
+                    <label for="screenRecordUpload" class="btn-custom">📱 화면녹화</label>
+                    <input type="file" id="voiceFileUpload" accept="audio/*,.mp3,.m4a,.wav,.webm,.ogg" style="display:none">
+                    <input type="file" id="screenRecordUpload" accept="video/mp4,video/*,.mp4,.mov,.m4v,.webm" style="display:none">
+                  </div>
+
+                  <div id="letterPanel" class="control-panel" style="left:277px;top:80px" hidden>
                     <div id="relayWritingHint" class="relay-writing-hint">글씨 꾸미기</div>
                     <div class="letter-style-row">
                       <select id="fontFamilySelect" class="style-select" title="글씨체">
@@ -2917,7 +3009,7 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
       let globalLeft = side==='right' ? m.right+4 : m.left-p.width-4;
 
       // 해당 버튼 행 근처에서 열되, 큰 패널은 시계 안에 전부 보이도록 자동 보정
-      const rowOffsets={soundPanel:0,backgroundPanel:40,letterPanel:80,saveSharePanel:120};
+      const rowOffsets={soundPanel:0,mediaPanel:40,backgroundPanel:80,letterPanel:80,saveSharePanel:120};
       let globalTop=m.top+(rowOffsets[panelId]||0);
 
       // 반대쪽에 공간이 더 많으면 자동 반전
@@ -2936,7 +3028,7 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
 
     function relayoutOpenMenus(){
       layoutMainMenu();
-      ['backgroundPanel','soundPanel','letterPanel','saveSharePanel'].forEach(id=>{
+      ['soundPanel','mediaPanel','backgroundPanel','letterPanel','saveSharePanel'].forEach(id=>{
         const el=document.getElementById(id);
         if(el && !el.hidden) layoutSubMenu(id);
       });
@@ -2960,7 +3052,7 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
     }
 
     function setSpeakWriteButton(active=false,busy=false){
-      const btn=document.getElementById('speakToWriteBtn');
+      const btn=document.getElementById('compactSpeechBtn') || document.getElementById('speakToWriteBtn');
       if(!btn)return;
       btn.disabled=!!busy;
       btn.classList.toggle('listening',!!active);
@@ -3186,6 +3278,35 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
     }
     window.quickToggleVoiceRecord=quickToggleVoiceRecord;
 
+
+    function openCompactWriter(mode='text'){
+      const writer=document.getElementById('compactWriter');
+      const title=document.getElementById('compactWriterTitle');
+      const speechBtn=document.getElementById('compactSpeechBtn');
+      if(!writer)return;
+
+      writer.hidden=false;
+      if(mode==='speech'){
+        if(title) title.textContent='말로 글쓰기';
+        if(speechBtn){
+          speechBtn.hidden=false;
+          speechBtn.textContent='🎙 말하기 시작';
+        }
+      }else{
+        if(title) title.textContent='직접 글쓰기';
+        if(speechBtn) speechBtn.hidden=true;
+        setTimeout(()=>document.getElementById('dialContentInput')?.focus(),60);
+      }
+    }
+
+    function closeCompactWriter(){
+      const writer=document.getElementById('compactWriter');
+      if(writer) writer.hidden=true;
+    }
+
+    window.openCompactWriter=openCompactWriter;
+    window.closeCompactWriter=closeCompactWriter;
+
     // ---------- 메뉴 ----------
     function toggleControlPanel(panelId,event){
       if(window.__suppressMenuClickUntil && Date.now()<window.__suppressMenuClickUntil){ event?.preventDefault(); event?.stopPropagation(); return; }
@@ -3202,7 +3323,7 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
       event?.stopPropagation();
       const target=document.getElementById(panelId);
       const open=target.hidden;
-      ['backgroundPanel','soundPanel','letterPanel','saveSharePanel'].forEach(id=>{
+      ['soundPanel','mediaPanel','backgroundPanel','letterPanel','saveSharePanel'].forEach(id=>{
         const el=document.getElementById(id);
         if(el) el.hidden=true;
       });
