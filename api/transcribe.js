@@ -1,44 +1,45 @@
+export const config = {
+  api: {
+    bodyParser: {
+      sizeLimit: '12mb'
+    }
+  }
+};
+
+function extensionFromMime(mime = '') {
+  const m = String(mime).toLowerCase();
+  if (m.includes('wav')) return 'wav';
+  if (m.includes('ogg')) return 'ogg';
+  if (m.includes('mp4') || m.includes('m4a')) return 'm4a';
+  if (m.includes('mpeg') || m.includes('mp3')) return 'mp3';
+  return 'webm';
+}
+
 export default async function handler(req, res) {
-  // 가장 단순한 Vercel Node 함수 형태로 구성
-  // 기존 프로젝트의 api/tts.js와 같은 export default 방식 사용
+  const apiKey = process.env.OPENAI_API_KEY;
 
   if (req.method === 'GET') {
     return res.status(200).json({
       ok: true,
       route: '/api/transcribe',
-      keyConfigured: !!process.env.OPENAI_API_KEY,
+      keyConfigured: !!apiKey,
       model: 'gpt-4o-mini-transcribe'
     });
   }
 
   if (req.method !== 'POST') {
-    res.setHeader('Allow', 'GET, POST');
-    return res.status(405).json({ error: 'GET/POST only' });
-  }
-
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    return res.status(500).json({
-      error: 'OPENAI_API_KEY is not configured',
-      code: 'missing_api_key'
-    });
+    return res.status(405).json({ error: 'POST only' });
   }
 
   try {
-    let body = req.body || {};
-
-    // 혹시 문자열로 들어온 경우도 안전하게 처리
-    if (typeof body === 'string') {
-      try {
-        body = JSON.parse(body);
-      } catch {
-        return res.status(400).json({ error: 'Invalid JSON body' });
-      }
+    if (!apiKey) {
+      return res.status(500).json({
+        error: 'OPENAI_API_KEY is not configured',
+        code: 'missing_api_key'
+      });
     }
 
-    const audioBase64 = body.audioBase64;
-    const mimeType = body.mimeType || 'audio/webm';
-
+    const { audioBase64, mimeType = 'audio/webm' } = req.body || {};
     if (!audioBase64 || typeof audioBase64 !== 'string') {
       return res.status(400).json({ error: 'audioBase64 is required' });
     }
@@ -48,28 +49,24 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Empty audio' });
     }
 
-    if (audioBuffer.length > 4 * 1024 * 1024) {
-      return res.status(413).json({
-        error: 'Audio is too large. Keep speech under about 45 seconds.'
-      });
+    // Keep requests comfortably below typical serverless payload limits.
+    if (audioBuffer.length > 8 * 1024 * 1024) {
+      return res.status(413).json({ error: 'Audio is too large' });
     }
 
-    const mime = String(mimeType).toLowerCase();
-    let ext = 'webm';
-    if (mime.includes('wav')) ext = 'wav';
-    else if (mime.includes('ogg')) ext = 'ogg';
-    else if (mime.includes('mp4') || mime.includes('m4a')) ext = 'm4a';
-    else if (mime.includes('mpeg') || mime.includes('mp3')) ext = 'mp3';
-
+    const ext = extensionFromMime(mimeType);
     const form = new FormData();
-    const fileBlob = new Blob([audioBuffer], { type: mimeType || 'audio/webm' });
 
-    form.append('file', fileBlob, `speech.${ext}`);
+    form.append(
+      'file',
+      new Blob([audioBuffer], { type: mimeType || 'audio/webm' }),
+      `speech.${ext}`
+    );
     form.append('model', 'gpt-4o-mini-transcribe');
     form.append('language', 'ko');
     form.append(
       'prompt',
-      '한국어 음성입니다. 지역 사투리와 원래 말투, 고유한 표현은 표준어로 바꾸지 말고 유지하세요. 의미를 바꾸지 말고 띄어쓰기와 문장부호만 읽기 좋게 정리하세요.'
+      '한국어 음성입니다. 지역 사투리와 원래 말투, 고유한 표현을 표준어로 바꾸지 말고 그대로 보존하세요. 의미를 바꾸지 말고 읽기 좋게 띄어쓰기와 문장부호만 자연스럽게 정리하세요.'
     );
 
     const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
@@ -80,18 +77,12 @@ export default async function handler(req, res) {
       body: form
     });
 
-    const raw = await response.text();
-    let data = {};
-    try {
-      data = JSON.parse(raw);
-    } catch {
-      data = { raw };
-    }
+    const data = await response.json().catch(() => ({}));
 
     if (!response.ok) {
-      console.error('OpenAI transcription error:', response.status, data);
+      console.error('OpenAI transcription error:', data);
       return res.status(response.status).json({
-        error: data?.error?.message || `OpenAI transcription failed (${response.status})`,
+        error: data?.error?.message || 'Transcription failed',
         code: data?.error?.code || data?.error?.type || 'openai_error'
       });
     }
@@ -102,9 +93,6 @@ export default async function handler(req, res) {
 
   } catch (error) {
     console.error('transcribe handler error:', error);
-    return res.status(500).json({
-      error: error?.message || 'Server transcription error',
-      code: 'server_error'
-    });
+    return res.status(500).json({ error: 'Server transcription error' });
   }
 }
