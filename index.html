@@ -758,7 +758,7 @@ window.addEventListener('DOMContentLoaded', async () => {
         drop-shadow(0 0 5px rgba(255,176,0,.18));
       backface-visibility:hidden; -webkit-backface-visibility:hidden;
       transform:translateZ(0);
-      animation:secondMeteorGlow 3.4s ease-in-out infinite;
+      animation:secondMeteorGlow 4.8s ease-in-out infinite;
     }
     @keyframes secondMeteorGlow {
       0% {
@@ -1092,7 +1092,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 
     /* PNG가 없을 때도 초침 금덩어리 외곽이 서서히 밝아졌다가 줄어드는 발광을 반복 */
     .second-meteorite-wrap::before {
-      animation:secondMeteorFallbackGlow 3.4s ease-in-out infinite;
+      animation:secondMeteorFallbackGlow 4.8s ease-in-out infinite;
     }
     @keyframes secondMeteorFallbackGlow {
       0% {
@@ -1551,7 +1551,7 @@ window.addEventListener('DOMContentLoaded', async () => {
                 </div>
 
                 <div class="top-controls">
-                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v3.2.4 · recording captions + nested second hand">⚙️</button>
+                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v3.2.5 · caption fix + slow glow">⚙️</button>
 
                   <div id="mainMenuPanel" class="control-panel" style="left:41px;top:0" hidden>
                     <button type="button" class="btn-custom" onclick="toggleSubPanel('backgroundPanel', event)">꾸미기</button>
@@ -3860,18 +3860,42 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
 
     async function createCaptionFromRecording(blob){
       if(!blob?.size) return false;
+
       try{
         window.showToast('📝 녹음 내용을 글자막으로 만드는 중...');
-        await transcribeSpeechBlob(blob);
-        const value=(document.getElementById('dialContentInput')?.value||'').trim();
-        if(value){
-          window.showToast('✅ 녹음 + 글자막 생성 완료');
-          return true;
+        const recognized = await transcribeSpeechBlob(blob);
+
+        if(!recognized){
+          window.showToast('⚠️ 녹음은 저장됐지만 글자막을 만들지 못했습니다');
+          return false;
         }
+
+        const writer=document.getElementById('compactWriter');
+        const title=document.getElementById('compactWriterTitle');
+        const input=document.getElementById('dialContentInput');
+
+        if(title) title.textContent='녹음 글자막';
+        if(writer) writer.hidden=false;
+
+        // 변환된 글이 바로 보이도록 아래쪽으로 이동하고 초점을 준다.
+        if(input){
+          input.scrollTop=input.scrollHeight;
+          setTimeout(()=>{
+            try{
+              input.focus();
+              input.setSelectionRange(input.value.length,input.value.length);
+            }catch(_){}
+          },80);
+        }
+
+        window.showToast('✅ 녹음 + 글자막 생성 완료');
+        return true;
+
       }catch(err){
-        console.error('Caption generation error:', err);
+        console.error('Caption generation error:',err);
+        window.showToast('⚠️ 녹음은 저장됨 · 글자막 변환만 실패');
+        return false;
       }
-      return false;
     }
 
     async function transcribeSpeechBlob(blob){
@@ -3905,8 +3929,9 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
         }
 
         appendTranscribedText(text);
-        setSpeechStatus('✓ 글로 작성되었습니다');
+        setSpeechStatus('✓ 글자막이 생성되었습니다');
         setTimeout(()=>setSpeechStatus(''),1600);
+        return text;
 
       }catch(err){
         console.error('Transcription error:',err);
@@ -3922,6 +3947,7 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
         }else{
           setSpeechStatus(msg ? `오류: ${msg.slice(0,90)}` : '음성→글 서버 오류',true);
         }
+        throw err;
       }finally{
         setSpeakWriteButton(false,false);
       }
