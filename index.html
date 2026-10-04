@@ -6,7 +6,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <title>TIME RELAY - 이어쓰는 시계편지 v3.1.1</title>
+  <title>TIME RELAY - 이어쓰는 시계편지 v3.1.2</title>
   <link rel="preconnect" href="https://fonts.googleapis.com/">
   <link rel="preconnect" href="https://fonts.gstatic.com/" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Inter:wght@400;600;800;900&family=JetBrains+Mono:wght@500;700&family=Nanum+Myeongjo:wght@700;800&family=Noto+Sans+KR:wght@400;700;900&family=Noto+Serif+KR:wght@400;700;900&display=swap" rel="stylesheet">
@@ -698,16 +698,32 @@ window.addEventListener('DOMContentLoaded', async () => {
     
       transform-style:preserve-3d;}
     .second-meteorite-wrap {
-      position:absolute; top:0; left:50%; transform:translate(-50%,-50%); width:65px; height:65px;
+      position:absolute; top:0; left:50%; transform:translate(-50%,-50%); width:54px; height:54px;
       display:flex; align-items:center; justify-content:center; transform-origin:center;
       backface-visibility:hidden; -webkit-backface-visibility:hidden; will-change:transform;
     }
+    .second-meteorite-wrap::after{
+      content:'';
+      position:absolute;
+      inset:11px;
+      border-radius:50%;
+      background:radial-gradient(circle,
+        rgba(253,230,138,.18) 0%,
+        rgba(245,158,11,.08) 48%,
+        rgba(245,158,11,0) 76%);
+      filter:blur(4px);
+      opacity:.5;
+      pointer-events:none;
+      z-index:1;
+    }
     .second-meteorite {
       position:absolute; width:100%; height:100%; object-fit:contain; z-index:2; pointer-events:none;
-      filter:drop-shadow(0 0 6px rgba(254,240,138,.98));
+      filter:
+        drop-shadow(0 1px 2px rgba(0,0,0,.72))
+        drop-shadow(0 0 2px rgba(253,224,71,.28));
       backface-visibility:hidden; -webkit-backface-visibility:hidden;
-    
-      transform:translateZ(0);}
+      transform:translateZ(0);
+    }
 
 
 
@@ -977,11 +993,7 @@ window.addEventListener('DOMContentLoaded', async () => {
       background:
         radial-gradient(circle at 33% 28%, rgba(255,255,235,.98) 0 7%, transparent 8%),
         radial-gradient(circle at 40% 35%, #fff3a8 0 10%, #ffd447 28%, #d99a08 56%, #8e5200 82%, #5b3200 100%);
-      box-shadow:
-        inset -6px -7px 10px rgba(80,38,0,.55),
-        inset 5px 4px 8px rgba(255,244,170,.55),
-        0 0 8px rgba(255,199,30,.85),
-        0 0 16px rgba(255,180,0,.35);
+      box-shadow:0 2px 5px rgba(0,0,0,.52),0 0 3px rgba(245,158,11,.20);
       transform:rotate(-9deg);
       z-index:1;
       pointer-events:none;
@@ -1414,7 +1426,7 @@ window.addEventListener('DOMContentLoaded', async () => {
                 </div>
 
                 <div class="top-controls">
-                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v3.1.1">⚙️</button>
+                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v3.1.2">⚙️</button>
 
                   <div id="mainMenuPanel" class="control-panel" style="left:41px;top:0" hidden>
                     <button type="button" class="btn-custom" onclick="toggleSubPanel('backgroundPanel', event)">꾸미기</button>
