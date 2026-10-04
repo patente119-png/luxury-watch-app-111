@@ -6,7 +6,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <title>TIME RELAY - 이어쓰는 시계편지 v3.2.1</title>
+  <title>TIME RELAY - 이어쓰는 시계편지 v3.2.2</title>
   <link rel="preconnect" href="https://fonts.googleapis.com/">
   <link rel="preconnect" href="https://fonts.gstatic.com/" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Inter:wght@400;600;800;900&family=JetBrains+Mono:wght@500;700&family=Nanum+Myeongjo:wght@700;800&family=Noto+Sans+KR:wght@400;700;900&family=Noto+Serif+KR:wght@400;700;900&display=swap" rel="stylesheet">
@@ -399,7 +399,7 @@
     
     window.addEventListener('DOMContentLoaded', () => {
       const btn = document.getElementById('recordBtn');
-      if (btn) btn.title = '녹음하면 음성과 글이 함께 남습니다';
+      if (btn) btn.title = '목소리를 녹음합니다';
     });
 
 window.addEventListener('DOMContentLoaded', async () => {
@@ -1523,9 +1523,7 @@ window.addEventListener('DOMContentLoaded', async () => {
                   <span id="compactWriterTitle">글쓰기</span>
                   <button type="button" onclick="closeCompactWriter()">×</button>
                 </div>
-                <button type="button" id="compactSpeechBtn" class="compact-speech-btn" onclick="toggleSpeakToWrite()" hidden aria-hidden="true" style="display:none">🎙 말하기 시작</button>
-                <div id="speechStatus" class="speech-status"></div>
-                <textarea id="dialContentInput" rows="5" placeholder="말하거나 직접 입력하세요"></textarea>
+                <textarea id="dialContentInput" rows="5" placeholder="직접 입력하세요"></textarea>
                 <button type="button" class="compact-writer-done" onclick="closeCompactWriter()">✓ 완료</button>
               </div>
 
@@ -1535,7 +1533,7 @@ window.addEventListener('DOMContentLoaded', async () => {
                 </div>
 
                 <div class="top-controls">
-                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v3.2.1 · glow pulse">⚙️</button>
+                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v3.2.2 · recording only">⚙️</button>
 
                   <div id="mainMenuPanel" class="control-panel" style="left:41px;top:0" hidden>
                     <button type="button" class="btn-custom" onclick="toggleSubPanel('backgroundPanel', event)">꾸미기</button>
@@ -1562,7 +1560,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 
                   <div id="soundPanel" class="control-panel compact-action-panel" style="left:159px;top:40px" hidden>
                     <button type="button" class="btn-custom" onclick="openCompactWriter('text')">✍ 글로 쓰기</button>
-                    <button type="button" id="recordBtn" class="btn-custom action-primary" onclick="toggleRecording()">🎙 녹음 · 말→글</button>
+                    <button type="button" id="recordBtn" class="btn-custom action-primary" onclick="toggleRecording()">🎙 녹음</button>
                     <button type="button" id="playAudioBtn" class="btn-custom" onclick="playRecordedAudio()">▶ 재생</button>
                     <button type="button" id="stopAudioBtn" class="btn-custom" onclick="stopAllPlayback()">■ 중지</button>
                     <label for="screenRecordUpload" class="btn-custom">📱 화면녹화</label>
@@ -2941,7 +2939,7 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
           stopMicTracks();
           recordBtn.disabled = false;
           recordBtn.classList.remove('recording');
-          recordBtn.textContent = '🎙 녹음 · 말→글';
+          recordBtn.textContent = '🎙 녹음';
           window.showToast('❌ 녹음 오류');
         };
 
@@ -2952,7 +2950,7 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
           stopMicTracks();
           recordBtn.disabled = false;
           recordBtn.classList.remove('recording');
-          recordBtn.textContent = '🎙 녹음 · 말→글';
+          recordBtn.textContent = '🎙 녹음';
           const quickVoiceBtn=document.getElementById('quickVoiceBtn');
           if(quickVoiceBtn){
             quickVoiceBtn.disabled=false;
@@ -2978,47 +2976,23 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
           }
 
           const kb = Math.max(1, Math.round(blob.size / 1024));
-
-          // 녹음과 말→글을 하나의 동작으로 처리한다.
-          // 녹음 원본은 그대로 보존하고, 같은 blob을 텍스트 변환에 사용한다.
-          const writer=document.getElementById('compactWriter');
-          const writerTitle=document.getElementById('compactWriterTitle');
-          if(writer) writer.hidden=false;
-          if(writerTitle) writerTitle.textContent='녹음 · 말→글';
-
-          setSpeechStatus('녹음 완료 · 글로 바꾸는 중...');
-          try{
-            await transcribeSpeechBlob(blob);
-            window.showToast(`✅ 녹음 저장 + 말→글 완료 · ${kb}KB`);
-          }catch(err){
-            console.error('Unified recording transcription failed:', err);
-            setSpeechStatus('녹음은 저장되었습니다 · 글 변환만 실패했습니다', true);
-            window.showToast(`🎙 녹음은 저장됨 · ${kb}KB`);
-          }
+          window.showToast(`✅ 녹음 완료 · ${kb}KB · 재생 버튼으로 확인하세요`);
         };
 
         // timeslice 없이 녹음하여 마지막 파일 헤더/메타데이터 호환성을 높임
         mediaRecorder.start();
 
-        const writer=document.getElementById('compactWriter');
-        const writerTitle=document.getElementById('compactWriterTitle');
-        const speechBtn=document.getElementById('compactSpeechBtn');
-        if(writer) writer.hidden=false;
-        if(writerTitle) writerTitle.textContent='녹음 · 말→글';
-        if(speechBtn) speechBtn.hidden=true;
-        setSpeechStatus('🔴 녹음 중... 말을 마치면 다시 눌러주세요');
-
         recordBtn.disabled = false;
         recordBtn.classList.add('recording');
         recordBtn.textContent = '■ 녹음 끝';
-        window.showToast('🔴 녹음 중 · 음성과 글을 함께 남깁니다');
+        window.showToast('🔴 녹음 중입니다 · 마치면 다시 눌러주세요');
 
       } catch (err) {
         console.error('Mic start error:', err);
         stopMicTracks();
         recordBtn.disabled = false;
         recordBtn.classList.remove('recording');
-        recordBtn.textContent = '🎙 녹음 · 말→글';
+        recordBtn.textContent = '🎙 녹음';
 
         if (err?.name === 'NotAllowedError' || err?.name === 'SecurityError') {
         } else {
@@ -3991,35 +3965,24 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
     window.quickToggleVoiceRecord=quickToggleVoiceRecord;
 
 
-    function openCompactWriter(mode='text'){
+    function openCompactWriter(){
       const writer=document.getElementById('compactWriter');
       const title=document.getElementById('compactWriterTitle');
-      const speechBtn=document.getElementById('compactSpeechBtn');
       const input=document.getElementById('dialContentInput');
       if(!writer)return;
 
       writer.hidden=false;
 
-      // 공유받은 사람은 "자기 글을 실제로 쓰기 시작하기 전"까지
-      // 글쓰기 창을 열 때마다 반드시 빈 칸으로 시작한다.
-      // 이전 작성자의 text가 어떤 경로로 화면에 남아 있어도 여기서 제거한다.
       if(window.__isSharedRelayPage && input && !window.__currentContributionStarted){
         input.value='';
         const nextOrder=Math.max(2,Number(window.currentRelayCount||0)+1);
         input.placeholder=`${nextOrder}번째 이야기를 남겨주세요`;
+      }else if(input){
+        input.placeholder='직접 입력하세요';
       }
 
-      if(mode==='speech'){
-        if(title) title.textContent='녹음 · 말→글';
-        if(speechBtn){
-          speechBtn.hidden=false;
-          speechBtn.textContent='🎙 말하기 시작';
-        }
-      }else{
-        if(title) title.textContent='직접 글쓰기';
-        if(speechBtn) speechBtn.hidden=true;
-        setTimeout(()=>input?.focus(),60);
-      }
+      if(title) title.textContent='글쓰기';
+      setTimeout(()=>input?.focus(),60);
     }
 
     function closeCompactWriter(){
