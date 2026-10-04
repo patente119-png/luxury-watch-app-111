@@ -661,13 +661,15 @@ window.addEventListener('DOMContentLoaded', async () => {
     
       transform-style:preserve-3d;}
     .hour-gold-tip-wrap {
-      position:absolute; top:0; left:50%; transform:translate(-50%,-50%); width:34px; height:34px;
+      position:absolute; top:0; left:50%; transform:translate(-50%,-50%); width:32px; height:32px;
       display:flex; align-items:center; justify-content:center; pointer-events:none;
       backface-visibility:hidden; -webkit-backface-visibility:hidden;
     }
     .hour-gold-tip {
       position:absolute; width:100%; height:100%; object-fit:contain; z-index:2; pointer-events:none;
-      filter:drop-shadow(0 0 4px rgba(254,240,138,.95));
+      filter:drop-shadow(0 1px 1.5px rgba(0,0,0,.70))
+        drop-shadow(0 0 2px rgba(255,214,80,.35))
+        drop-shadow(0 0 4px rgba(255,181,0,.16));
       backface-visibility:hidden; -webkit-backface-visibility:hidden;
     
       transform:translateZ(0);}
@@ -678,13 +680,15 @@ window.addEventListener('DOMContentLoaded', async () => {
     
       transform-style:preserve-3d;}
     .minute-gold-tip-wrap {
-      position:absolute; top:0; left:50%; transform:translate(-50%,-50%); width:38px; height:38px;
+      position:absolute; top:0; left:50%; transform:translate(-50%,-50%); width:36px; height:36px;
       display:flex; align-items:center; justify-content:center; pointer-events:none;
       backface-visibility:hidden; -webkit-backface-visibility:hidden;
     }
     .minute-gold-tip {
       position:absolute; width:100%; height:100%; object-fit:contain; z-index:2; pointer-events:none;
-      filter:drop-shadow(0 0 5px rgba(254,240,138,.95));
+      filter:drop-shadow(0 1px 1.5px rgba(0,0,0,.70))
+        drop-shadow(0 0 2px rgba(255,214,80,.34))
+        drop-shadow(0 0 4px rgba(255,181,0,.15));
       backface-visibility:hidden; -webkit-backface-visibility:hidden;
     
       transform:translateZ(0);}
@@ -704,7 +708,9 @@ window.addEventListener('DOMContentLoaded', async () => {
     }
     .second-meteorite {
       position:absolute; width:100%; height:100%; object-fit:contain; z-index:2; pointer-events:none;
-      filter:drop-shadow(0 0 3px rgba(254,240,138,.42));
+      filter:drop-shadow(0 1px 2px rgba(0,0,0,.72))
+        drop-shadow(0 0 2px rgba(255,215,96,.42))
+        drop-shadow(0 0 5px rgba(255,176,0,.18));
       backface-visibility:hidden; -webkit-backface-visibility:hidden;
       transform:translateZ(0);
     }
@@ -988,6 +994,17 @@ window.addEventListener('DOMContentLoaded', async () => {
     }
     .gold-sync-target { opacity:0; }
     .gold-sync-target.hand-image-ready { opacity:1; }
+
+    /* 실제 PNG가 로드되면 뒤의 노란 CSS 바탕을 완전히 숨긴다.
+       발광은 PNG 투명 외곽을 따라 drop-shadow로만 표현된다. */
+    .hour-gold-tip-wrap:has(.hand-image-ready)::before,
+    .minute-gold-tip-wrap:has(.hand-image-ready)::before,
+    .second-meteorite-wrap:has(.hand-image-ready)::before {
+      opacity:0;
+    }
+
+    /* 초침은 원형 배경광을 만들지 않고 금덩어리 실루엣만 발광 */
+    .second-meteorite-wrap::after { display:none!important; }
 
     /* Story Scene: 글/배경/소리를 복제하지 않고 하나의 장면으로 연결 */
     #letterPanel{
@@ -1414,7 +1431,7 @@ window.addEventListener('DOMContentLoaded', async () => {
                 </div>
 
                 <div class="top-controls">
-                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v3.1.1 · large orbit · glow 50%">⚙️</button>
+                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v3.1.1 · large orbit · contour glow">⚙️</button>
 
                   <div id="mainMenuPanel" class="control-panel" style="left:41px;top:0" hidden>
                     <button type="button" class="btn-custom" onclick="toggleSubPanel('backgroundPanel', event)">꾸미기</button>
