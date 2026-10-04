@@ -812,6 +812,14 @@ window.addEventListener('DOMContentLoaded', async () => {
       border-top:1px solid rgba(125,211,252,.18);
       margin-top:2px;
     }
+    .nested-submenu{
+      display:grid;
+      gap:4px;
+      margin-top:4px;
+      padding-top:4px;
+      border-top:1px solid rgba(125,211,252,.18);
+    }
+    .nested-submenu[hidden]{display:none !important;}
     .compact-action-panel .btn-custom,
     .compact-action-panel label.btn-custom{
       min-height:29px;
@@ -1543,7 +1551,7 @@ window.addEventListener('DOMContentLoaded', async () => {
                 </div>
 
                 <div class="top-controls">
-                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v3.2.3 · second hand presets">⚙️</button>
+                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v3.2.4 · recording captions + nested second hand">⚙️</button>
 
                   <div id="mainMenuPanel" class="control-panel" style="left:41px;top:0" hidden>
                     <button type="button" class="btn-custom" onclick="toggleSubPanel('backgroundPanel', event)">꾸미기</button>
@@ -1562,12 +1570,14 @@ window.addEventListener('DOMContentLoaded', async () => {
                       <option value="30">전환 30초</option>
                       <option value="60">전환 60초</option>
                     </select>
-                    <div class="compact-section-title">초침 4종</div>
-                    <button type="button" class="btn-custom" onclick="applyBuiltInMeteor('gold_nugget')">💛 금덩어리</button>
-                    <button type="button" class="btn-custom" onclick="applyBuiltInMeteor('lava_meteor')">🌋 용암 운석</button>
-                    <button type="button" class="btn-custom" onclick="applyBuiltInMeteor('amber_letter')">🧡 편지 호박</button>
-                    <button type="button" class="btn-custom" onclick="applyBuiltInMeteor('memory_meteor')">🕰 추억 운석</button>
-                    <label for="fileMeteoriteUpload" class="btn-custom">🖼 사용자 초침</label>
+                    <button type="button" class="btn-custom" onclick="toggleSecondHandMenu(event)">🕒 초침 선택</button>
+                    <div id="secondHandPresetGroup" class="nested-submenu" hidden>
+                      <button type="button" class="btn-custom" onclick="applyBuiltInMeteor('gold_nugget')">💛 금덩어리</button>
+                      <button type="button" class="btn-custom" onclick="applyBuiltInMeteor('lava_meteor')">🌋 용암 운석</button>
+                      <button type="button" class="btn-custom" onclick="applyBuiltInMeteor('amber_letter')">🧡 편지 호박</button>
+                      <button type="button" class="btn-custom" onclick="applyBuiltInMeteor('memory_meteor')">🕰 추억 운석</button>
+                      <label for="fileMeteoriteUpload" class="btn-custom">🖼 사용자 초침</label>
+                    </div>
                     <input type="file" id="filePhotoUpload" accept="image/*" multiple style="display:none">
                     <input type="file" id="fileVideoUpload" accept="video/*" multiple style="display:none">
                     <input type="file" id="fileMeteoriteUpload" accept="image/*" style="display:none">
@@ -2009,9 +2019,18 @@ window.addEventListener('DOMContentLoaded', async () => {
       window.customMeteorBlob = null;
       window.remoteMeteorUrl = '';
       setHandImageSource(preset.src);
+      const group=document.getElementById('secondHandPresetGroup');
+      if(group) group.hidden=true;
       if(!opts.silent) window.showToast(`✨ 초침 적용 · ${preset.name}`);
     }
     window.applyBuiltInMeteor = applyBuiltInMeteor;
+    function toggleSecondHandMenu(event){
+      event?.stopPropagation?.();
+      const box=document.getElementById('secondHandPresetGroup');
+      if(!box) return;
+      box.hidden=!box.hidden;
+    }
+    window.toggleSecondHandMenu = toggleSecondHandMenu;
     function setHandImageSource(source){
       ['hourGoldImg','minGoldImg','secGoldImg'].forEach(id=>{
         const img=document.getElementById(id);
@@ -2697,6 +2716,8 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
       window.selectedMeteorPreset='';
       const handUrl=URL.createObjectURL(f);
       setHandImageSource(handUrl);
+      const group=document.getElementById('secondHandPresetGroup');
+      if(group) group.hidden=true;
       window.showToast('🕰️ 사용자 초침 이미지 적용');
     });
 
@@ -3024,6 +3045,7 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
 
           const kb = Math.max(1, Math.round(blob.size / 1024));
           window.showToast(`✅ 녹음 완료 · ${kb}KB · 재생 버튼으로 확인하세요`);
+          await createCaptionFromRecording(blob);
         };
 
         // timeslice 없이 녹음하여 마지막 파일 헤더/메타데이터 호환성을 높임
@@ -3836,6 +3858,22 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
       input.scrollTop=input.scrollHeight;
     }
 
+    async function createCaptionFromRecording(blob){
+      if(!blob?.size) return false;
+      try{
+        window.showToast('📝 녹음 내용을 글자막으로 만드는 중...');
+        await transcribeSpeechBlob(blob);
+        const value=(document.getElementById('dialContentInput')?.value||'').trim();
+        if(value){
+          window.showToast('✅ 녹음 + 글자막 생성 완료');
+          return true;
+        }
+      }catch(err){
+        console.error('Caption generation error:', err);
+      }
+      return false;
+    }
+
     async function transcribeSpeechBlob(blob){
       setSpeakWriteButton(false,true);
       setSpeechStatus('글로 바꾸는 중...');
@@ -4068,6 +4106,8 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
         const el=document.getElementById(id);
         if(el) el.hidden=true;
       });
+      const secondHandGroup=document.getElementById('secondHandPresetGroup');
+      if(secondHandGroup) secondHandGroup.hidden=true;
       target.hidden=!open;
       if(open) requestAnimationFrame(()=>{ layoutMainMenu(); layoutSubMenu(panelId); });
     }
