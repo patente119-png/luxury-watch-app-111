@@ -6,7 +6,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <title>TIME RELAY - 이어쓰는 시계편지 v3.1.1</title>
+  <title>TIME RELAY - 이어쓰는 시계편지 v3.2.0</title>
   <link rel="preconnect" href="https://fonts.googleapis.com/">
   <link rel="preconnect" href="https://fonts.gstatic.com/" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Inter:wght@400;600;800;900&family=JetBrains+Mono:wght@500;700&family=Nanum+Myeongjo:wght@700;800&family=Noto+Sans+KR:wght@400;700;900&family=Noto+Serif+KR:wght@400;700;900&display=swap" rel="stylesheet">
@@ -97,6 +97,7 @@
         narrator: raw.narrator ?? 'female',
         narratorAudioUrl: raw.narratorAudioUrl || '',
         audioUrl: raw.audioUrl || '',
+        audioKind: raw.audioKind || '',
         backgroundUrl: raw.backgroundUrl || '',
         backgroundType: raw.backgroundType || '',
         backgroundPlaylist: Array.isArray(raw.backgroundPlaylist) ? raw.backgroundPlaylist : [],
@@ -117,26 +118,48 @@
 
 
     // 완성본용: 마지막 watch에서 parentId를 따라 1번까지 역추적한 뒤
-    // 작성 순서대로 반환한다.
+    // 작성 순서대로 반환한다. 예전 버전에서 "저장 → 최종완성" 때
+    // 마지막 작성자가 한 번 더 복제된 기록은 화면에서 자동 제거한다.
     window.loadCompletedRelayChain = async function(finalWatchId){
-      const chain=[];
+      const rawChain=[];
       const seen=new Set();
       let currentId=finalWatchId || '';
 
-      while(currentId && !seen.has(currentId) && chain.length < 50){
+      while(currentId && !seen.has(currentId) && rawChain.length < 50){
         seen.add(currentId);
         const snap=await getDoc(doc(db,'watches',currentId));
         if(!snap.exists()) break;
 
         const data=normalizeWatchData(snap.data());
-        chain.push({
-          id: currentId,
-          ...data
-        });
+        rawChain.push({ id:currentId, ...data });
         currentId=data.parentId || '';
       }
 
-      chain.reverse();
+      rawChain.reverse();
+
+      const signature=item=>{
+        const bg=(Array.isArray(item.backgroundPlaylist)?item.backgroundPlaylist:[])
+          .map(x=>`${x?.type||''}:${x?.url||''}`).join('|');
+        return JSON.stringify({
+          text:(item.text||'').trim(),
+          audio:item.audioUrl||'',
+          bg,
+          bg1:item.backgroundUrl||'',
+          meteor:item.meteorUrl||''
+        });
+      };
+
+      const chain=[];
+      for(const item of rawChain){
+        if(chain.length && signature(chain[chain.length-1])===signature(item)){
+          // 같은 사람이 저장 후 최종완성을 눌러 생긴 중복 스냅샷이면
+          // 최종 상태(뒤쪽 item)만 남긴다.
+          chain[chain.length-1]=item;
+        }else{
+          chain.push(item);
+        }
+      }
+
       return chain;
     };
 
@@ -155,11 +178,25 @@
         );
 
         const sourceId = new URLSearchParams(location.search).get('id') || null;
-        const docId = newWatchId(); // 항상 새 링크 생성
 
-        const isContribution = mode === 'relay' || mode === 'save' || mode === 'complete';
-        const isRelay = isContribution;
-        const nextRelayCount = isContribution
+        // 같은 사람이 이미 "저장"한 뒤 "최종 완성"을 누르면
+        // 새 사람으로 +1 하지 않고 방금 저장한 문서를 완성 상태로 갱신한다.
+        const reuseSavedContribution =
+          mode === 'complete' &&
+          !!window.__lastSavedDocId &&
+          !!window.__lastShareUrl;
+
+        const docId = reuseSavedContribution
+          ? window.__lastSavedDocId
+          : newWatchId();
+
+        const createsContribution =
+          mode === 'relay' ||
+          mode === 'save' ||
+          (mode === 'complete' && !reuseSavedContribution);
+
+        const isRelay = createsContribution;
+        const nextRelayCount = createsContribution
           ? Math.max(1, Number(window.currentRelayCount || 0) + 1)
           : Number(window.currentRelayCount || 0);
 
@@ -167,7 +204,7 @@
           ? [...window.currentRelayHistory]
           : [];
 
-        const relayHistory = isRelay
+        const relayHistory = createsContribution
           ? [...baseRelayHistory, {
               step: nextRelayCount,
               fromWatchId: sourceId || null,
@@ -175,10 +212,12 @@
             }].slice(-30)
           : baseRelayHistory.slice(-30);
 
-        let audioUrl = window.remoteAudioUrl || '';
-        let narratorAudioUrl = window.remoteNarratorAudioUrl || '';
-        let backgroundUrl = window.remoteBackgroundUrl || '';
-        let backgroundType = window.remoteBackgroundType || '';
+        // 다음 주자의 문서에는 앞사람의 음성/배경을 소유 미디어처럼 복제하지 않는다.
+        // 화면에서는 앞사람 상태를 볼 수 있어도, 새 기록에는 본인이 새로 고른 것만 저장한다.
+        let audioUrl = window.__isSharedRelayPage ? '' : (window.remoteAudioUrl || '');
+        let narratorAudioUrl = '';
+        let backgroundUrl = window.__isSharedRelayPage ? '' : (window.remoteBackgroundUrl || '');
+        let backgroundType = window.__isSharedRelayPage ? '' : (window.remoteBackgroundType || '');
         let meteorUrl = window.remoteMeteorUrl || '';
 
         // 새 녹음이 있으면 최신 음성 1개로 교체
@@ -195,7 +234,9 @@
           narratorAudioUrl = await uploadBlob(`narrators/${docId}.mp3`, window.aiNarratorBlob);
         }
 
-        let backgroundPlaylist = Array.isArray(window.backgroundPlaylist) ? [...window.backgroundPlaylist] : [];
+        let backgroundPlaylist = window.__isSharedRelayPage
+          ? []
+          : (Array.isArray(window.backgroundPlaylist) ? [...window.backgroundPlaylist] : []);
 
         if (Array.isArray(window.backgroundPlaylistBlobs) && window.backgroundPlaylistBlobs.length) {
           window.showToast?.('🌌 배경 묶음 업로드 중...');
@@ -245,6 +286,9 @@
           narrator: document.getElementById('narratorSelect')?.value || 'female',
           narratorAudioUrl,
           audioUrl,
+          audioKind: window.screenRecordingBlob
+            ? 'screen'
+            : (window.recordedAudioBlob ? 'recording' : ''),
           backgroundUrl,
           backgroundType,
           backgroundPlaylist,
@@ -355,7 +399,7 @@
     
     window.addEventListener('DOMContentLoaded', () => {
       const btn = document.getElementById('recordBtn');
-      if (btn) btn.title = '녹음 시작';
+      if (btn) btn.title = '녹음하면 음성과 글이 함께 남습니다';
     });
 
 window.addEventListener('DOMContentLoaded', async () => {
@@ -1117,6 +1161,12 @@ window.addEventListener('DOMContentLoaded', async () => {
       gap:7px;
       margin-top:9px;
     }
+    .completed-relay-media-label{
+      margin-top:2px;
+      font-size:10px;
+      font-weight:900;
+      color:#bae6fd;
+    }
     .completed-relay-media audio{
       width:100%;
       height:36px;
@@ -1419,7 +1469,7 @@ window.addEventListener('DOMContentLoaded', async () => {
                   <span id="compactWriterTitle">글쓰기</span>
                   <button type="button" onclick="closeCompactWriter()">×</button>
                 </div>
-                <button type="button" id="compactSpeechBtn" class="compact-speech-btn" onclick="toggleSpeakToWrite()" hidden>🎙 말하기 시작</button>
+                <button type="button" id="compactSpeechBtn" class="compact-speech-btn" onclick="toggleSpeakToWrite()" hidden aria-hidden="true" style="display:none">🎙 말하기 시작</button>
                 <div id="speechStatus" class="speech-status"></div>
                 <textarea id="dialContentInput" rows="5" placeholder="말하거나 직접 입력하세요"></textarea>
                 <button type="button" class="compact-writer-done" onclick="closeCompactWriter()">✓ 완료</button>
@@ -1431,7 +1481,7 @@ window.addEventListener('DOMContentLoaded', async () => {
                 </div>
 
                 <div class="top-controls">
-                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v3.1.1 · large orbit · contour glow">⚙️</button>
+                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v3.2.0 · unified recording">⚙️</button>
 
                   <div id="mainMenuPanel" class="control-panel" style="left:41px;top:0" hidden>
                     <button type="button" class="btn-custom" onclick="toggleSubPanel('backgroundPanel', event)">꾸미기</button>
@@ -1457,9 +1507,8 @@ window.addEventListener('DOMContentLoaded', async () => {
                   </div>
 
                   <div id="soundPanel" class="control-panel compact-action-panel" style="left:159px;top:40px" hidden>
-                    <button type="button" id="speakToWriteBtn" class="btn-custom action-primary" onclick="openCompactWriter('speech')">🎙 말로 쓰기</button>
                     <button type="button" class="btn-custom" onclick="openCompactWriter('text')">✍ 글로 쓰기</button>
-                    <button type="button" id="recordBtn" class="btn-custom" onclick="toggleRecording()">● 녹음</button>
+                    <button type="button" id="recordBtn" class="btn-custom action-primary" onclick="toggleRecording()">🎙 녹음 · 말→글</button>
                     <button type="button" id="playAudioBtn" class="btn-custom" onclick="playRecordedAudio()">▶ 재생</button>
                     <button type="button" id="stopAudioBtn" class="btn-custom" onclick="stopAllPlayback()">■ 중지</button>
                     <label for="screenRecordUpload" class="btn-custom">📱 화면녹화</label>
@@ -1638,8 +1687,11 @@ window.addEventListener('DOMContentLoaded', async () => {
         }
 
         if(title) title.textContent=`🏁 ${chain.length}명 릴레이 완성본`;
+        window.setCompletedUI?.(chain.length, window.__lastShareUrl || '');
 
         chain.forEach((item,index)=>{
+          const prev=index>0 ? chain[index-1] : null;
+
           const card=document.createElement('section');
           card.className='completed-relay-card';
 
@@ -1667,7 +1719,17 @@ window.addEventListener('DOMContentLoaded', async () => {
           const media=document.createElement('div');
           media.className='completed-relay-media';
 
-          if(item.audioUrl){
+          // 앞사람과 같은 URL이면 상속된 음성이므로 이 사람의 녹음으로 표시하지 않는다.
+          const ownsAudio = !!item.audioUrl && (!prev || item.audioUrl !== prev.audioUrl);
+          if(ownsAudio){
+            const label=document.createElement('div');
+            label.className='completed-relay-media-label';
+            label.textContent =
+              item.audioKind==='screen' || /\.mp4($|\?)/i.test(item.audioUrl)
+                ? '📱 화면녹화 소리'
+                : '🎙 남긴 녹음';
+            media.appendChild(label);
+
             const audio=document.createElement('audio');
             audio.controls=true;
             audio.preload='none';
@@ -1675,25 +1737,51 @@ window.addEventListener('DOMContentLoaded', async () => {
             media.appendChild(audio);
           }
 
-          const bgItem=(Array.isArray(item.backgroundPlaylist) && item.backgroundPlaylist.length)
-            ? item.backgroundPlaylist[0]
-            : (item.backgroundUrl ? {url:item.backgroundUrl,type:item.backgroundType||'image'} : null);
+          const currentBackgrounds =
+            Array.isArray(item.backgroundPlaylist) && item.backgroundPlaylist.length
+              ? item.backgroundPlaylist
+              : (item.backgroundUrl
+                  ? [{url:item.backgroundUrl,type:item.backgroundType||'image'}]
+                  : []);
 
-          if(bgItem?.url){
-            if(bgItem.type==='video'){
-              const video=document.createElement('video');
-              video.controls=true;
-              video.preload='metadata';
-              video.playsInline=true;
-              video.src=bgItem.url;
-              media.appendChild(video);
-            }else{
-              const img=document.createElement('img');
-              img.loading='lazy';
-              img.alt=`${index+1}번째 편지 배경`;
-              img.src=bgItem.url;
-              media.appendChild(img);
-            }
+          const prevBgSignature = prev
+            ? JSON.stringify(
+                (Array.isArray(prev.backgroundPlaylist) && prev.backgroundPlaylist.length
+                  ? prev.backgroundPlaylist
+                  : (prev.backgroundUrl ? [{url:prev.backgroundUrl,type:prev.backgroundType||'image'}] : [])
+                ).map(x=>({url:x?.url||'',type:x?.type||''}))
+              )
+            : '';
+
+          const currentBgSignature = JSON.stringify(
+            currentBackgrounds.map(x=>({url:x?.url||'',type:x?.type||''}))
+          );
+
+          // 앞사람과 같은 배경 묶음은 상속 상태이므로 중복 표시하지 않는다.
+          if(currentBackgrounds.length && currentBgSignature !== prevBgSignature){
+            const bgLabel=document.createElement('div');
+            bgLabel.className='completed-relay-media-label';
+            bgLabel.textContent='🖼 선택한 배경';
+            media.appendChild(bgLabel);
+
+            currentBackgrounds.forEach((bgItem,bgIndex)=>{
+              if(!bgItem?.url)return;
+
+              if(bgItem.type==='video'){
+                const video=document.createElement('video');
+                video.controls=true;
+                video.preload='metadata';
+                video.playsInline=true;
+                video.src=bgItem.url;
+                media.appendChild(video);
+              }else{
+                const img=document.createElement('img');
+                img.loading='lazy';
+                img.alt=`${index+1}번째 편지 배경 ${bgIndex+1}`;
+                img.src=bgItem.url;
+                media.appendChild(img);
+              }
+            });
           }
 
           if(media.childNodes.length) card.appendChild(media);
@@ -2799,18 +2887,18 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
           stopMicTracks();
           recordBtn.disabled = false;
           recordBtn.classList.remove('recording');
-          recordBtn.textContent = '● 녹음';
+          recordBtn.textContent = '🎙 녹음 · 말→글';
           window.showToast('❌ 녹음 오류');
         };
 
-        mediaRecorder.onstop = () => {
+        mediaRecorder.onstop = async () => {
           const mime = mediaRecorder?.mimeType || audioChunks[0]?.type || 'audio/webm';
           const blob = new Blob(audioChunks, { type: mime });
 
           stopMicTracks();
           recordBtn.disabled = false;
           recordBtn.classList.remove('recording');
-          recordBtn.textContent = '● 녹음';
+          recordBtn.textContent = '🎙 녹음 · 말→글';
           const quickVoiceBtn=document.getElementById('quickVoiceBtn');
           if(quickVoiceBtn){
             quickVoiceBtn.disabled=false;
@@ -2836,27 +2924,47 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
           }
 
           const kb = Math.max(1, Math.round(blob.size / 1024));
-          const finishedMode = document.getElementById('recordModeSelect')?.value || 'voice';
-          window.showToast(`✅ ${finishedMode === 'music' ? '음악' : '목소리'} 녹음 완료 · ${kb}KB · 재생 버튼을 누르세요`);
+
+          // 녹음과 말→글을 하나의 동작으로 처리한다.
+          // 녹음 원본은 그대로 보존하고, 같은 blob을 텍스트 변환에 사용한다.
+          const writer=document.getElementById('compactWriter');
+          const writerTitle=document.getElementById('compactWriterTitle');
+          if(writer) writer.hidden=false;
+          if(writerTitle) writerTitle.textContent='녹음 · 말→글';
+
+          setSpeechStatus('녹음 완료 · 글로 바꾸는 중...');
+          try{
+            await transcribeSpeechBlob(blob);
+            window.showToast(`✅ 녹음 저장 + 말→글 완료 · ${kb}KB`);
+          }catch(err){
+            console.error('Unified recording transcription failed:', err);
+            setSpeechStatus('녹음은 저장되었습니다 · 글 변환만 실패했습니다', true);
+            window.showToast(`🎙 녹음은 저장됨 · ${kb}KB`);
+          }
         };
 
         // timeslice 없이 녹음하여 마지막 파일 헤더/메타데이터 호환성을 높임
         mediaRecorder.start();
 
+        const writer=document.getElementById('compactWriter');
+        const writerTitle=document.getElementById('compactWriterTitle');
+        const speechBtn=document.getElementById('compactSpeechBtn');
+        if(writer) writer.hidden=false;
+        if(writerTitle) writerTitle.textContent='녹음 · 말→글';
+        if(speechBtn) speechBtn.hidden=true;
+        setSpeechStatus('🔴 녹음 중... 말을 마치면 다시 눌러주세요');
+
         recordBtn.disabled = false;
         recordBtn.classList.add('recording');
         recordBtn.textContent = '■ 녹음 끝';
-        const activeMode = document.getElementById('recordModeSelect')?.value || 'voice';
-        window.showToast(activeMode === 'music'
-          ? '🎵 음악 녹음 중 · 다른 휴대폰과 20~40cm 거리 권장'
-          : '🔴 목소리 녹음 중입니다');
+        window.showToast('🔴 녹음 중 · 음성과 글을 함께 남깁니다');
 
       } catch (err) {
         console.error('Mic start error:', err);
         stopMicTracks();
         recordBtn.disabled = false;
         recordBtn.classList.remove('recording');
-        recordBtn.textContent = '● 녹음';
+        recordBtn.textContent = '🎙 녹음 · 말→글';
 
         if (err?.name === 'NotAllowedError' || err?.name === 'SecurityError') {
         } else {
@@ -3848,7 +3956,7 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
       }
 
       if(mode==='speech'){
-        if(title) title.textContent='말로 글쓰기';
+        if(title) title.textContent='녹음 · 말→글';
         if(speechBtn){
           speechBtn.hidden=false;
           speechBtn.textContent='🎙 말하기 시작';
