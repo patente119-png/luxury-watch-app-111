@@ -6,7 +6,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <title>TIME RELAY - 이어쓰는 시계편지 v3.1.0</title>
+  <title>TIME RELAY - 이어쓰는 시계편지 v3.1.1</title>
   <link rel="preconnect" href="https://fonts.googleapis.com/">
   <link rel="preconnect" href="https://fonts.gstatic.com/" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Inter:wght@400;600;800;900&family=JetBrains+Mono:wght@500;700&family=Nanum+Myeongjo:wght@700;800&family=Noto+Sans+KR:wght@400;700;900&family=Noto+Serif+KR:wght@400;700;900&display=swap" rel="stylesheet">
@@ -1414,7 +1414,7 @@ window.addEventListener('DOMContentLoaded', async () => {
                 </div>
 
                 <div class="top-controls">
-                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v3.1.0">⚙️</button>
+                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v3.1.1">⚙️</button>
 
                   <div id="mainMenuPanel" class="control-panel" style="left:41px;top:0" hidden>
                     <button type="button" class="btn-custom" onclick="toggleSubPanel('backgroundPanel', event)">꾸미기</button>
@@ -2367,12 +2367,54 @@ window.addEventListener('DOMContentLoaded', async () => {
       window.customBackgroundType='';
       window.remoteBackgroundUrl='';
       window.remoteBackgroundType='';
+
       const photo=document.getElementById('filePhotoUpload');
       const video=document.getElementById('fileVideoUpload');
       if(photo) photo.value='';
       if(video) video.value='';
+
       window.applyBackground('./assets/spring.mp4','video',true);
-      window.showToast('↺ 배경 선택을 초기화했습니다 · 다시 선택해주세요');
+
+      const hasSharedId =
+        !!new URLSearchParams(location.search).get('id') ||
+        !!new URLSearchParams((location.hash||'').replace(/^#/,'')).get('id');
+
+      if(!hasSharedId){
+        const input=document.getElementById('dialContentInput');
+        if(input){
+          input.value='';
+          input.placeholder='말하거나 직접 입력하세요';
+        }
+
+        window.__incomingRelay=false;
+        window.__isSharedRelayPage=false;
+        window.__currentContributionStarted=false;
+        window.previousRelayText='';
+        window.__lastShareUrl='';
+        window.__lastShareMessage='';
+
+        const linkBox=document.getElementById('savedLinkBox');
+        if(linkBox) linkBox.hidden=true;
+
+        try{
+          const raw=localStorage.getItem('LuxuryWatchStandardState');
+          if(raw){
+            const state=JSON.parse(raw);
+            state.text='';
+            state.storyScenes=[];
+            localStorage.setItem('LuxuryWatchStandardState',JSON.stringify(state));
+          }
+        }catch(_){}
+
+        window.storyScenes=[];
+        window.updateStorySceneUI?.();
+      }
+
+      window.showToast(
+        hasSharedId
+          ? '↺ 배경을 다시 선택할 수 있습니다'
+          : '↺ 초기 화면으로 돌아왔습니다'
+      );
     };
 
     document.getElementById('filePhotoUpload').addEventListener('change',e=>{
