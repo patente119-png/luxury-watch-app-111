@@ -6,7 +6,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <title>TIME RELAY - 이어쓰는 시계편지 v3.2.0</title>
+  <title>TIME RELAY - 이어쓰는 시계편지 v3.2.1</title>
   <link rel="preconnect" href="https://fonts.googleapis.com/">
   <link rel="preconnect" href="https://fonts.gstatic.com/" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Inter:wght@400;600;800;900&family=JetBrains+Mono:wght@500;700&family=Nanum+Myeongjo:wght@700;800&family=Noto+Sans+KR:wght@400;700;900&family=Noto+Serif+KR:wght@400;700;900&display=swap" rel="stylesheet">
@@ -757,6 +757,31 @@ window.addEventListener('DOMContentLoaded', async () => {
         drop-shadow(0 0 5px rgba(255,176,0,.18));
       backface-visibility:hidden; -webkit-backface-visibility:hidden;
       transform:translateZ(0);
+      animation:secondMeteorGlow 2.4s ease-in-out infinite;
+    }
+    @keyframes secondMeteorGlow {
+      0% {
+        opacity:.88;
+        filter:
+          drop-shadow(0 1px 2px rgba(0,0,0,.72))
+          drop-shadow(0 0 2px rgba(255,218,108,.24))
+          drop-shadow(0 0 5px rgba(255,176,0,.10));
+      }
+      50% {
+        opacity:1;
+        filter:
+          drop-shadow(0 1px 2px rgba(0,0,0,.78))
+          drop-shadow(0 0 7px rgba(255,224,120,.76))
+          drop-shadow(0 0 14px rgba(255,183,0,.56))
+          drop-shadow(0 0 24px rgba(255,146,0,.34));
+      }
+      100% {
+        opacity:.88;
+        filter:
+          drop-shadow(0 1px 2px rgba(0,0,0,.72))
+          drop-shadow(0 0 2px rgba(255,218,108,.24))
+          drop-shadow(0 0 5px rgba(255,176,0,.10));
+      }
     }
 
 
@@ -1045,6 +1070,35 @@ window.addEventListener('DOMContentLoaded', async () => {
     .minute-gold-tip-wrap:has(.hand-image-ready)::before,
     .second-meteorite-wrap:has(.hand-image-ready)::before {
       opacity:0;
+    }
+
+    /* PNG가 없을 때도 초침 금덩어리 외곽이 서서히 밝아졌다가 줄어드는 발광을 반복 */
+    .second-meteorite-wrap::before {
+      animation:secondMeteorFallbackGlow 2.4s ease-in-out infinite;
+    }
+    @keyframes secondMeteorFallbackGlow {
+      0% {
+        box-shadow:
+          inset -6px -7px 10px rgba(80,38,0,.55),
+          inset 5px 4px 8px rgba(255,244,170,.55),
+          0 0 4px rgba(255,199,30,.28),
+          0 0 8px rgba(255,180,0,.10);
+      }
+      50% {
+        box-shadow:
+          inset -6px -7px 10px rgba(80,38,0,.55),
+          inset 5px 4px 8px rgba(255,244,170,.55),
+          0 0 8px rgba(255,211,76,.66),
+          0 0 18px rgba(255,171,20,.38),
+          0 0 28px rgba(255,133,0,.20);
+      }
+      100% {
+        box-shadow:
+          inset -6px -7px 10px rgba(80,38,0,.55),
+          inset 5px 4px 8px rgba(255,244,170,.55),
+          0 0 4px rgba(255,199,30,.28),
+          0 0 8px rgba(255,180,0,.10);
+      }
     }
 
     /* 초침은 원형 배경광을 만들지 않고 금덩어리 실루엣만 발광 */
@@ -1481,7 +1535,7 @@ window.addEventListener('DOMContentLoaded', async () => {
                 </div>
 
                 <div class="top-controls">
-                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v3.2.0 · unified recording">⚙️</button>
+                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v3.2.1 · glow pulse">⚙️</button>
 
                   <div id="mainMenuPanel" class="control-panel" style="left:41px;top:0" hidden>
                     <button type="button" class="btn-custom" onclick="toggleSubPanel('backgroundPanel', event)">꾸미기</button>
