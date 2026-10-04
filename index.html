@@ -751,37 +751,66 @@ window.addEventListener('DOMContentLoaded', async () => {
       display:flex; align-items:center; justify-content:center; transform-origin:center;
       backface-visibility:hidden; -webkit-backface-visibility:hidden; will-change:transform;
     }
+    .second-meteorite-wrap::after {
+      content:'';
+      position:absolute;
+      top:18%; left:72%;
+      width:18px; height:14px;
+      transform:translate(-50%,-50%) rotate(-12deg);
+      border-radius:58% 42% 56% 44% / 54% 46% 58% 42%;
+      background:radial-gradient(circle at 35% 40%, rgba(255,255,255,.92) 0 24%, rgba(255,250,238,.68) 24% 44%, rgba(255,241,214,.22) 44% 64%, transparent 74%);
+      filter:blur(1.8px);
+      opacity:.82;
+      pointer-events:none;
+      mix-blend-mode:screen;
+      z-index:3;
+      animation:secondMeteorTipGlow 6.2s ease-in-out infinite;
+    }
     .second-meteorite {
       position:absolute; width:100%; height:100%; object-fit:contain; z-index:2; pointer-events:none;
       filter:drop-shadow(0 1px 2px rgba(0,0,0,.72))
-        drop-shadow(0 0 2px rgba(255,248,228,.30))
-        drop-shadow(0 0 5px rgba(255,213,120,.14));
+        drop-shadow(0 0 2px rgba(255,240,205,.22))
+        drop-shadow(0 0 5px rgba(255,204,96,.12));
       backface-visibility:hidden; -webkit-backface-visibility:hidden;
       transform:translateZ(0);
-      animation:secondMeteorGlow 5.8s ease-in-out infinite;
+      animation:secondMeteorGlow 6.2s ease-in-out infinite;
     }
     @keyframes secondMeteorGlow {
       0% {
         opacity:.90;
         filter:
           drop-shadow(0 1px 2px rgba(0,0,0,.72))
-          drop-shadow(0 0 2px rgba(255,247,230,.18))
-          drop-shadow(0 0 5px rgba(255,205,110,.08));
+          drop-shadow(0 0 2px rgba(255,240,205,.12))
+          drop-shadow(0 0 4px rgba(255,196,86,.06));
       }
       50% {
         opacity:.98;
         filter:
           drop-shadow(0 1px 2px rgba(0,0,0,.76))
-          drop-shadow(0 0 5px rgba(255,251,242,.50))
-          drop-shadow(0 0 11px rgba(255,236,190,.30))
-          drop-shadow(0 0 18px rgba(255,198,92,.16));
+          drop-shadow(0 0 4px rgba(255,248,238,.28))
+          drop-shadow(0 0 10px rgba(255,224,154,.18))
+          drop-shadow(0 0 16px rgba(255,190,72,.12));
       }
       100% {
         opacity:.90;
         filter:
           drop-shadow(0 1px 2px rgba(0,0,0,.72))
-          drop-shadow(0 0 2px rgba(255,247,230,.18))
-          drop-shadow(0 0 5px rgba(255,205,110,.08));
+          drop-shadow(0 0 2px rgba(255,240,205,.12))
+          drop-shadow(0 0 4px rgba(255,196,86,.06));
+      }
+    }
+    @keyframes secondMeteorTipGlow {
+      0% {
+        opacity:.62;
+        filter:blur(1.6px);
+      }
+      50% {
+        opacity:.92;
+        filter:blur(2.2px);
+      }
+      100% {
+        opacity:.62;
+        filter:blur(1.6px);
       }
     }
 
@@ -1092,7 +1121,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 
     /* PNG가 없을 때도 초침 금덩어리 외곽이 서서히 밝아졌다가 줄어드는 발광을 반복 */
     .second-meteorite-wrap::before {
-      animation:secondMeteorFallbackGlow 5.8s ease-in-out infinite;
+      animation:secondMeteorFallbackGlow 6.2s ease-in-out infinite;
     }
     @keyframes secondMeteorFallbackGlow {
       0% {
@@ -1551,7 +1580,7 @@ window.addEventListener('DOMContentLoaded', async () => {
                 </div>
 
                 <div class="top-controls">
-                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v3.2.6 · gold-white soft glow">⚙️</button>
+                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v3.2.7 · local STT fallback + white tip">⚙️</button>
 
                   <div id="mainMenuPanel" class="control-panel" style="left:41px;top:0" hidden>
                     <button type="button" class="btn-custom" onclick="toggleSubPanel('backgroundPanel', event)">꾸미기</button>
@@ -2837,6 +2866,10 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
     let recordingSourceStream = null;
     let currentAudio = null;
     let currentObjectUrl = null;
+    let liveSpeechRecognition = null;
+    let liveSpeechTranscript = '';
+    let liveSpeechRecognitionActive = false;
+    let liveSpeechEndResolver = null;
 
     function getBestRecordingOptions() {
       const candidates = [
@@ -2896,6 +2929,90 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
         recordingSourceStream?.getTracks()?.forEach(t=>t.stop());
       }catch(_){}
       recordingSourceStream = null;
+    }
+
+    function getSpeechRecognitionCtor(){
+      return window.SpeechRecognition || window.webkitSpeechRecognition || null;
+    }
+
+    function resetLiveSpeechRecognition(){
+      try{ liveSpeechRecognition?.stop?.(); }catch(_){}
+      try{ liveSpeechRecognition?.abort?.(); }catch(_){}
+      liveSpeechRecognition = null;
+      liveSpeechRecognitionActive = false;
+      liveSpeechTranscript = '';
+      if(liveSpeechEndResolver){
+        try{ liveSpeechEndResolver(liveSpeechTranscript.trim()); }catch(_){}
+      }
+      liveSpeechEndResolver = null;
+    }
+
+    function startLiveSpeechRecognition(){
+      const SpeechCtor = getSpeechRecognitionCtor();
+      liveSpeechTranscript = '';
+      if(!SpeechCtor) return false;
+      try{
+        const recog = new SpeechCtor();
+        liveSpeechRecognition = recog;
+        liveSpeechRecognitionActive = true;
+        recog.lang = 'ko-KR';
+        recog.continuous = true;
+        recog.interimResults = true;
+        recog.maxAlternatives = 1;
+        recog.onresult = (event) => {
+          let finalText = '';
+          for(let i=event.resultIndex; i<event.results.length; i++){
+            const r = event.results[i];
+            const t = String(r?.[0]?.transcript || '').trim();
+            if(!t) continue;
+            if(r.isFinal) finalText += (finalText ? ' ' : '') + t;
+          }
+          if(finalText){
+            liveSpeechTranscript = [liveSpeechTranscript, finalText].filter(Boolean).join(' ').replace(/\s+/g,' ').trim();
+          }
+        };
+        recog.onerror = (event) => {
+          console.warn('SpeechRecognition error:', event?.error || event);
+        };
+        recog.onend = () => {
+          liveSpeechRecognitionActive = false;
+          const finalText = String(liveSpeechTranscript || '').replace(/\s+/g,' ').trim();
+          if(liveSpeechEndResolver){
+            try{ liveSpeechEndResolver(finalText); }catch(_){}
+            liveSpeechEndResolver = null;
+          }
+        };
+        recog.start();
+        return true;
+      }catch(err){
+        console.warn('SpeechRecognition start failed:', err);
+        resetLiveSpeechRecognition();
+        return false;
+      }
+    }
+
+    async function stopLiveSpeechRecognition(){
+      if(!liveSpeechRecognition) return '';
+      const existing = String(liveSpeechTranscript || '').replace(/\s+/g,' ').trim();
+      if(!liveSpeechRecognitionActive) return existing;
+      return await new Promise(resolve => {
+        let done = false;
+        liveSpeechEndResolver = (text) => {
+          if(done) return;
+          done = true;
+          resolve(String(text || '').replace(/\s+/g,' ').trim());
+        };
+        setTimeout(() => {
+          if(done) return;
+          done = true;
+          resolve(String(liveSpeechTranscript || '').replace(/\s+/g,' ').trim());
+          liveSpeechEndResolver = null;
+          try{ liveSpeechRecognition?.abort?.(); }catch(_){}
+        }, 1300);
+        try{ liveSpeechRecognition.stop(); }catch(_){
+          resolve(existing);
+        }
+      });
     }
 
     async function requestMicPermission(){
@@ -3005,6 +3122,7 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
         mediaRecorder.onerror = e => {
           console.error('MediaRecorder error:', e);
           stopMicTracks();
+          resetLiveSpeechRecognition();
           recordBtn.disabled = false;
           recordBtn.classList.remove('recording');
           recordBtn.textContent = '🎙 녹음';
@@ -3045,8 +3163,34 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
 
           const kb = Math.max(1, Math.round(blob.size / 1024));
           window.showToast(`✅ 녹음 완료 · ${kb}KB · 재생 버튼으로 확인하세요`);
-          await createCaptionFromRecording(blob);
+
+          const localTranscript = await stopLiveSpeechRecognition();
+          if(localTranscript){
+            appendTranscribedText(localTranscript);
+            const writer=document.getElementById('compactWriter');
+            const title=document.getElementById('compactWriterTitle');
+            const input=document.getElementById('dialContentInput');
+            if(title) title.textContent='녹음 글자막';
+            if(writer) writer.hidden=false;
+            if(input){
+              input.scrollTop=input.scrollHeight;
+              setTimeout(()=>{
+                try{
+                  input.focus();
+                  input.setSelectionRange(input.value.length,input.value.length);
+                }catch(_){ }
+              },80);
+            }
+            setSpeechStatus('✓ 녹음 직후 글자막 생성 완료');
+            setTimeout(()=>setSpeechStatus(''),1600);
+            window.showToast('✅ 녹음 + 글자막 생성 완료');
+          }else{
+            await createCaptionFromRecording(blob);
+          }
         };
+
+        // 가능하면 브라우저 음성인식을 함께 켜서 글자막 실패를 줄인다.
+        startLiveSpeechRecognition();
 
         // timeslice 없이 녹음하여 마지막 파일 헤더/메타데이터 호환성을 높임
         mediaRecorder.start();
@@ -3059,6 +3203,7 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
       } catch (err) {
         console.error('Mic start error:', err);
         stopMicTracks();
+        resetLiveSpeechRecognition();
         recordBtn.disabled = false;
         recordBtn.classList.remove('recording');
         recordBtn.textContent = '🎙 녹음';
