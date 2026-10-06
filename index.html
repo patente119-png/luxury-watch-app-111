@@ -85,6 +85,65 @@
       return await getDownloadURL(fileRef);
     }
 
+    // 릴레이 전달용: 동영상 자체는 넘기지 않고 첫 장면을 JPEG 정지 이미지로 만든다.
+    async function captureVideoFirstFrame(videoBlob){
+      if(!videoBlob?.size) throw new Error('empty video');
+      const objectUrl=URL.createObjectURL(videoBlob);
+      const video=document.createElement('video');
+      video.muted=true;
+      video.playsInline=true;
+      video.preload='auto';
+      video.src=objectUrl;
+
+      const waitEvent=(name,timeout=9000)=>new Promise((resolve,reject)=>{
+        let done=false;
+        const cleanup=()=>{
+          video.removeEventListener(name,onOk);
+          video.removeEventListener('error',onErr);
+        };
+        const onOk=()=>{ if(done)return; done=true; cleanup(); resolve(); };
+        const onErr=()=>{ if(done)return; done=true; cleanup(); reject(new Error('video '+name+' failed')); };
+        video.addEventListener(name,onOk,{once:true});
+        video.addEventListener('error',onErr,{once:true});
+        setTimeout(()=>{ if(done)return; done=true; cleanup(); reject(new Error('video '+name+' timeout')); },timeout);
+      });
+
+      try{
+        if(video.readyState<1) await waitEvent('loadedmetadata');
+        if(video.readyState<2) await waitEvent('loadeddata');
+
+        // 검은 첫 프레임을 피하면서도 사실상 첫 장면에 해당하는 아주 초반 프레임을 사용한다.
+        const duration=Number.isFinite(video.duration) ? video.duration : 0;
+        const captureAt=duration>0 ? Math.min(0.12,Math.max(0,duration*0.01)) : 0;
+        if(captureAt>0.001){
+          try{
+            video.currentTime=captureAt;
+            await waitEvent('seeked',5000);
+          }catch(_){ /* loadeddata 첫 프레임 사용 */ }
+        }
+
+        const sw=Math.max(1,video.videoWidth||720);
+        const sh=Math.max(1,video.videoHeight||1280);
+        const maxSide=1600;
+        const scale=Math.min(1,maxSide/Math.max(sw,sh));
+        const w=Math.max(1,Math.round(sw*scale));
+        const h=Math.max(1,Math.round(sh*scale));
+        const canvas=document.createElement('canvas');
+        canvas.width=w; canvas.height=h;
+        const ctx=canvas.getContext('2d',{alpha:false});
+        if(!ctx) throw new Error('canvas unavailable');
+        ctx.drawImage(video,0,0,w,h);
+        const poster=await new Promise((resolve,reject)=>{
+          canvas.toBlob(b=>b?resolve(b):reject(new Error('poster encode failed')),'image/jpeg',0.9);
+        });
+        return poster;
+      }finally{
+        try{ video.pause(); video.removeAttribute('src'); video.load(); }catch(_){}
+        try{ URL.revokeObjectURL(objectUrl); }catch(_){}
+      }
+    }
+    window.captureVideoFirstFrame=captureVideoFirstFrame;
+
     function normalizeWatchData(raw) {
       if (!raw) return null;
       return {
@@ -243,19 +302,57 @@
           backgroundPlaylist = [];
           for (let i = 0; i < window.backgroundPlaylistBlobs.length; i++) {
             const item = window.backgroundPlaylistBlobs[i];
-            const ext = extFromBlob(item.blob, item.type === 'video' ? 'mp4' : 'jpg');
-            const url = await uploadBlob(`backgrounds/${docId}_${i}.${ext}`, item.blob);
-            backgroundPlaylist.push({ url, type: item.type });
+            let relayBlob=item.blob;
+            let relayType=item.type;
+
+            // 동영상은 릴레이에서 제외하고 첫 장면만 정지 이미지로 전달한다.
+            if(item.type === 'video'){
+              window.showToast?.(`🎬 영상 ${i+1} 첫 장면을 정지 이미지로 만드는 중...`);
+              try{
+                relayBlob=await captureVideoFirstFrame(item.blob);
+                relayType='image';
+              }catch(err){
+                console.error('Video poster capture failed:',err);
+                window.showToast?.(`⚠️ 영상 ${i+1} 정지 이미지 변환 실패 · 영상은 전달하지 않습니다`);
+                continue;
+              }
+            }
+
+            const ext = relayType === 'image' ? 'jpg' : extFromBlob(relayBlob,'jpg');
+            const url = await uploadBlob(`backgrounds/${docId}_${i}.${ext}`, relayBlob);
+            backgroundPlaylist.push({
+              url,
+              type: relayType,
+              sourceType: item.type === 'video' ? 'video-poster' : relayType
+            });
           }
           if (backgroundPlaylist[0]) {
             backgroundUrl = backgroundPlaylist[0].url;
             backgroundType = backgroundPlaylist[0].type;
           }
         } else if (window.customBackgroundBlob) {
-          window.showToast?.('🌌 배경 업로드 중...');
-          const ext = extFromBlob(window.customBackgroundBlob, window.customBackgroundType === 'video' ? 'mp4' : 'jpg');
-          backgroundUrl = await uploadBlob(`backgrounds/${docId}.${ext}`, window.customBackgroundBlob);
-          backgroundType = window.customBackgroundType;
+          let relayBlob=window.customBackgroundBlob;
+          let relayType=window.customBackgroundType;
+
+          if(window.customBackgroundType === 'video'){
+            window.showToast?.('🎬 영상 첫 장면을 정지 이미지로 만드는 중...');
+            try{
+              relayBlob=await captureVideoFirstFrame(window.customBackgroundBlob);
+              relayType='image';
+            }catch(err){
+              console.error('Video poster capture failed:',err);
+              relayBlob=null;
+              relayType='';
+              window.showToast?.('⚠️ 영상 정지 이미지 변환 실패 · 영상은 전달하지 않습니다');
+            }
+          }
+
+          if(relayBlob){
+            window.showToast?.('🌌 배경 업로드 중...');
+            const ext = relayType === 'image' ? 'jpg' : extFromBlob(relayBlob,'jpg');
+            backgroundUrl = await uploadBlob(`backgrounds/${docId}.${ext}`, relayBlob);
+            backgroundType = relayType;
+          }
         }
 
         if (window.customMeteorBlob) {
@@ -1523,6 +1620,17 @@ window.addEventListener('DOMContentLoaded', async () => {
       background:rgba(14,116,144,.20)!important;
     }
 
+
+    .relay-media-note{
+      font-size:9px;
+      line-height:1.35;
+      color:#cbd5e1;
+      text-align:center;
+      padding:4px 5px;
+      border:1px solid rgba(125,211,252,.22);
+      border-radius:5px;
+      background:rgba(2,8,23,.42);
+    }
 </style>
 </head>
 <body>
@@ -1551,7 +1659,7 @@ window.addEventListener('DOMContentLoaded', async () => {
                 </div>
 
                 <div class="top-controls">
-                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v3.2.11 · second hand reverted">⚙️</button>
+                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v3.2.12 · video first-frame relay">⚙️</button>
 
                   <div id="mainMenuPanel" class="control-panel" style="left:41px;top:0" hidden>
                     <button type="button" class="btn-custom" onclick="toggleSubPanel('backgroundPanel', event)">꾸미기</button>
@@ -1630,6 +1738,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 
                   <div id="saveSharePanel" class="control-panel relay-send-panel" style="left:159px;top:80px" hidden>
                     <div id="relayActiveActions">
+                      <div class="relay-media-note">🎬 영상 배경은 전달 시 첫 장면 정지 이미지로 변환</div>
                       <button type="button" class="btn-custom" onclick="saveAndCreateLink()">💾 저장</button>
                       <button type="button" class="btn-custom relay-primary-send" onclick="shareSavedLink()">📨 다른 사람에게</button>
                       <button type="button" class="btn-custom" onclick="completeRelay()">🏁 최종 완성</button>
