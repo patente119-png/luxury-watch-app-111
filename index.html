@@ -882,8 +882,8 @@ window.addEventListener('DOMContentLoaded', async () => {
     .second-meteorite {
       position:absolute; width:100%; height:100%; object-fit:contain; z-index:2; pointer-events:none;
       filter:drop-shadow(0 1px 2px rgba(0,0,0,.72))
-        drop-shadow(0 0 2px rgba(255,248,228,.36))
-        drop-shadow(0 0 5px rgba(255,213,120,.17));
+        drop-shadow(0 0 2px rgba(255,248,228,.45))
+        drop-shadow(0 0 5px rgba(255,213,120,.21));
       backface-visibility:hidden; -webkit-backface-visibility:hidden;
       transform:translateZ(0);
       animation:secondMeteorGlow 5.8s ease-in-out infinite;
@@ -893,23 +893,23 @@ window.addEventListener('DOMContentLoaded', async () => {
         opacity:.90;
         filter:
           drop-shadow(0 1px 2px rgba(0,0,0,.72))
-          drop-shadow(0 0 2px rgba(255,247,230,.22))
-          drop-shadow(0 0 5px rgba(255,205,110,.10));
+          drop-shadow(0 0 2px rgba(255,247,230,.28))
+          drop-shadow(0 0 5px rgba(255,205,110,.13));
       }
       50% {
         opacity:.98;
         filter:
           drop-shadow(0 1px 2px rgba(0,0,0,.76))
-          drop-shadow(0 0 5px rgba(255,251,242,.60))
-          drop-shadow(0 0 11px rgba(255,236,190,.36))
-          drop-shadow(0 0 18px rgba(255,198,92,.19));
+          drop-shadow(0 0 6px rgba(255,251,242,.75))
+          drop-shadow(0 0 13px rgba(255,236,190,.45))
+          drop-shadow(0 0 21px rgba(255,198,92,.24));
       }
       100% {
         opacity:.90;
         filter:
           drop-shadow(0 1px 2px rgba(0,0,0,.72))
-          drop-shadow(0 0 2px rgba(255,247,230,.22))
-          drop-shadow(0 0 5px rgba(255,205,110,.10));
+          drop-shadow(0 0 2px rgba(255,247,230,.28))
+          drop-shadow(0 0 5px rgba(255,205,110,.13));
       }
     }
 
@@ -1267,23 +1267,23 @@ window.addEventListener('DOMContentLoaded', async () => {
         box-shadow:
           inset -6px -7px 10px rgba(80,38,0,.50),
           inset 5px 4px 8px rgba(255,247,210,.42),
-          0 0 3px rgba(255,246,230,.19),
-          0 0 7px rgba(255,206,110,.10);
+          0 0 4px rgba(255,246,230,.24),
+          0 0 8px rgba(255,206,110,.13);
       }
       50% {
         box-shadow:
           inset -6px -7px 10px rgba(80,38,0,.50),
           inset 5px 4px 8px rgba(255,247,210,.42),
-          0 0 6px rgba(255,250,242,.50),
-          0 0 12px rgba(255,232,188,.29),
-          0 0 20px rgba(255,195,92,.17);
+          0 0 7px rgba(255,250,242,.63),
+          0 0 14px rgba(255,232,188,.36),
+          0 0 23px rgba(255,195,92,.21);
       }
       100% {
         box-shadow:
           inset -6px -7px 10px rgba(80,38,0,.50),
           inset 5px 4px 8px rgba(255,247,210,.42),
-          0 0 3px rgba(255,246,230,.19),
-          0 0 7px rgba(255,206,110,.10);
+          0 0 4px rgba(255,246,230,.24),
+          0 0 8px rgba(255,206,110,.13);
       }
     }
 
@@ -1734,7 +1734,7 @@ window.addEventListener('DOMContentLoaded', async () => {
                 </div>
 
                 <div class="top-controls">
-                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v3.2.18 · narration length guide">⚙️</button>
+                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v3.2.19 · direct screen record + brighter glow">⚙️</button>
 
                   <div id="mainMenuPanel" class="control-panel" style="left:41px;top:0" hidden>
                     <button type="button" class="btn-custom" onclick="toggleSubPanel('backgroundPanel', event)">꾸미기</button>
@@ -2995,12 +2995,14 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
     async function acceptCopyrightAndStartScreenRecording(){
       try{
         localStorage.setItem(COPYRIGHT_CONSENT_KEY,'yes');
-      }catch(_){ }
+      }catch(_){}
       const box=document.getElementById('copyrightConsent');
       if(box) box.checked=true;
+
+      // 동의 버튼의 같은 사용자 클릭에서 바로 화면 선택 API를 호출한다.
+      // 브라우저의 사용자 제스처 제한으로 인해 다른 함수/타이머를 한 번 더 거치지 않는다.
+      await startScreenRecordingNow();
       closeCopyrightModal();
-      // 이 클릭 자체가 사용자 제스처이므로 바로 화면 선택창을 열 수 있다.
-      await toggleScreenRecording(true);
     }
     window.acceptCopyrightAndStartScreenRecording=acceptCopyrightAndStartScreenRecording;
     function openCopyrightModal(title, bodyHtml){
@@ -3122,39 +3124,33 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
       screenCaptureStream=null;
     }
 
-    async function toggleScreenRecording(consentAlreadyConfirmed=false){
+    async function startScreenRecordingNow(){
       const btn=document.getElementById('screenRecordBtn');
 
-      if(screenMediaRecorder && screenMediaRecorder.state==='recording'){
-        try{ screenMediaRecorder.requestData?.(); }catch(_){}
-        btn && (btn.disabled=true);
-        if(btn) btn.textContent='처리 중...';
-        try{ screenMediaRecorder.stop(); }catch(_){ stopScreenCaptureTracks(); }
-        return;
-      }
-
-      if(!consentAlreadyConfirmed && !hasCopyrightConsent()){
-        openScreenRecordingConsent();
-        return;
-      }
-
-      // 기존/이번 세션의 동의 상태를 UI와 저장값에 동기화한다.
-      try{ localStorage.setItem(COPYRIGHT_CONSENT_KEY,'yes'); }catch(_){ }
-      const consentBox=document.getElementById('copyrightConsent');
-      if(consentBox) consentBox.checked=true;
-
       if(!navigator.mediaDevices?.getDisplayMedia || !window.MediaRecorder){
-        window.showToast('📂 직접 녹화를 지원하지 않아 녹화파일 선택창을 엽니다');
+        window.showToast('📂 직접 화면녹화를 지원하지 않아 녹화파일 선택창을 엽니다');
         document.getElementById('screenRecordUpload')?.click();
-        return;
+        return false;
       }
 
       try{
         screenCaptureChunks=[];
-        screenCaptureStream=await navigator.mediaDevices.getDisplayMedia({
-          video:{frameRate:{ideal:30,max:30}},
-          audio:true
-        });
+
+        try{
+          screenCaptureStream=await navigator.mediaDevices.getDisplayMedia({
+            video:{frameRate:{ideal:30,max:30}},
+            audio:true
+          });
+        }catch(firstErr){
+          if(firstErr?.name==='TypeError' || firstErr?.name==='OverconstrainedError'){
+            screenCaptureStream=await navigator.mediaDevices.getDisplayMedia({
+              video:{frameRate:{ideal:30,max:30}},
+              audio:false
+            });
+          }else{
+            throw firstErr;
+          }
+        }
 
         const opts=getBestScreenRecordingOptions();
         try{
@@ -3172,7 +3168,11 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
         screenMediaRecorder.onerror=e=>{
           console.error('Screen recording error:',e);
           stopScreenCaptureTracks();
-          if(btn){ btn.disabled=false; btn.classList.remove('recording'); btn.textContent='📱 화면녹화'; }
+          if(btn){
+            btn.disabled=false;
+            btn.classList.remove('recording');
+            btn.textContent='📱 화면녹화';
+          }
           window.showToast('❌ 화면녹화 오류');
         };
 
@@ -3180,10 +3180,15 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
           const mime=screenMediaRecorder?.mimeType || screenCaptureChunks[0]?.type || 'video/webm';
           const blob=new Blob(screenCaptureChunks,{type:mime});
           const hasAudio=(screenCaptureStream?.getAudioTracks?.().length||0)>0;
+
           stopScreenCaptureTracks();
           screenCaptureChunks=[];
 
-          if(btn){ btn.disabled=false; btn.classList.remove('recording'); btn.textContent='📱 화면녹화'; }
+          if(btn){
+            btn.disabled=false;
+            btn.classList.remove('recording');
+            btn.textContent='📱 화면녹화';
+          }
 
           if(!blob.size){
             window.showToast('❌ 화면녹화 데이터가 없습니다');
@@ -3217,25 +3222,75 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
         }
 
         screenMediaRecorder.start(500);
-        if(btn){ btn.disabled=false; btn.classList.add('recording'); btn.textContent='■ 화면녹화 끝'; }
+
+        if(btn){
+          btn.disabled=false;
+          btn.classList.add('recording');
+          btn.textContent='■ 화면녹화 끝';
+        }
+
         const audioTracks=screenCaptureStream.getAudioTracks?.()||[];
-        window.showToast(audioTracks.length
-          ? '🔴 화면녹화 중 · 화면 공유를 끝내거나 버튼을 다시 누르세요'
-          : '🔴 화면녹화 중 · 소리도 필요하면 공유창에서 시스템 오디오를 켜세요');
+        window.showToast(
+          audioTracks.length
+            ? '🔴 화면녹화 중 · 다시 누르면 종료됩니다'
+            : '🔴 화면녹화 중 · 시스템 소리는 공유창에서 오디오 공유를 켜주세요'
+        );
+        return true;
+
       }catch(err){
         stopScreenCaptureTracks();
-        if(btn){ btn.disabled=false; btn.classList.remove('recording'); btn.textContent='📱 화면녹화'; }
-        if(err?.name==='NotAllowedError' || err?.name==='AbortError'){
-          window.showToast('화면녹화 선택이 취소되었습니다');
+
+        if(btn){
+          btn.disabled=false;
+          btn.classList.remove('recording');
+          btn.textContent='📱 화면녹화';
+        }
+
+        console.error('getDisplayMedia failed:',err);
+
+        if(err?.name==='NotAllowedError'){
+          window.showToast('⚠️ 화면 공유 권한이 허용되지 않았습니다');
+        }else if(err?.name==='AbortError'){
+          window.showToast('화면 선택이 취소되었습니다');
+        }else if(location.protocol!=='https:' &&
+                 !['localhost','127.0.0.1','::1'].includes(location.hostname)){
+          window.showToast('❌ 화면녹화는 HTTPS 또는 localhost에서 실행해주세요');
         }else{
-          console.error('getDisplayMedia failed:',err);
-          if(location.protocol!=='https:' && !['localhost','127.0.0.1','::1'].includes(location.hostname)){
-            window.showToast('❌ 화면녹화는 HTTPS 또는 localhost에서 실행해주세요');
-          }else{
-            window.showToast('❌ 화면녹화를 시작할 수 없습니다');
+          window.showToast(`❌ 화면녹화 실패 · ${err?.name||'브라우저 오류'}`);
+        }
+        return false;
+      }
+    }
+    window.startScreenRecordingNow=startScreenRecordingNow;
+
+    async function toggleScreenRecording(){
+      const btn=document.getElementById('screenRecordBtn');
+
+      if(screenMediaRecorder && screenMediaRecorder.state==='recording'){
+        try{ screenMediaRecorder.requestData?.(); }catch(_){}
+        if(btn){
+          btn.disabled=true;
+          btn.textContent='처리 중...';
+        }
+        try{
+          screenMediaRecorder.stop();
+        }catch(_){
+          stopScreenCaptureTracks();
+          if(btn){
+            btn.disabled=false;
+            btn.classList.remove('recording');
+            btn.textContent='📱 화면녹화';
           }
         }
+        return;
       }
+
+      if(!hasCopyrightConsent()){
+        openScreenRecordingConsent();
+        return;
+      }
+
+      await startScreenRecordingNow();
     }
     window.toggleScreenRecording=toggleScreenRecording;
 
