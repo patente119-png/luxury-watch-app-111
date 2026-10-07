@@ -791,6 +791,36 @@ window.addEventListener('DOMContentLoaded', async () => {
     .cal-date-num { font-size:17px; font-weight:900; color:#fff; }
     .dial-input-container { position:absolute; bottom:14px; left:50%; transform:translateX(-50%); width:90%; max-width:360px; display:flex; flex-direction:column; align-items:center; gap:4px; z-index:35; }
     .dial-textarea { width:100%; height:105px; background:transparent!important; border:none!important; outline:none!important; font-family:'Noto Sans KR',sans-serif; font-size:12.5px; font-weight:600; line-height:1.45; color:#fbcfe8; text-align:center; resize:none; overflow:hidden!important; text-shadow:0 2px 8px rgba(0,0,0,.95); user-select:text; -webkit-user-select:text; }
+    .recording-caption-overlay{
+      position:absolute;
+      left:50%;
+      bottom:70px;
+      transform:translateX(-50%);
+      width:min(82%,320px);
+      max-height:64px;
+      padding:7px 12px;
+      box-sizing:border-box;
+      border:1px solid rgba(125,211,252,.62);
+      border-radius:10px;
+      background:rgba(3,8,18,.66);
+      color:#f8fafc;
+      font-family:'Noto Sans KR',sans-serif;
+      font-size:12px;
+      font-weight:700;
+      line-height:1.45;
+      text-align:center;
+      text-shadow:0 2px 8px rgba(0,0,0,.96);
+      box-shadow:0 4px 18px rgba(0,0,0,.40), inset 0 0 12px rgba(125,211,252,.05);
+      backdrop-filter:blur(3px);
+      -webkit-backdrop-filter:blur(3px);
+      z-index:62;
+      cursor:pointer;
+      overflow:hidden;
+      display:-webkit-box;
+      -webkit-box-orient:vertical;
+      -webkit-line-clamp:3;
+    }
+    .recording-caption-overlay[hidden]{display:none!important;}
     .hand-pivot-container {
       position:absolute; top:50%; left:50%; width:0; height:0; pointer-events:none; z-index:25;
       transform:translateZ(0);
@@ -1659,7 +1689,7 @@ window.addEventListener('DOMContentLoaded', async () => {
                 </div>
 
                 <div class="top-controls">
-                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v3.2.12 · video first-frame relay">⚙️</button>
+                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v3.2.13 · visible recording caption">⚙️</button>
 
                   <div id="mainMenuPanel" class="control-panel" style="left:41px;top:0" hidden>
                     <button type="button" class="btn-custom" onclick="toggleSubPanel('backgroundPanel', event)">꾸미기</button>
@@ -1767,6 +1797,8 @@ window.addEventListener('DOMContentLoaded', async () => {
                 <div id="relayBadge" class="relay-badge"></div>
 
                 <div id="writingPromptBar" class="writing-prompt-bar"></div>
+
+                <div id="recordingCaptionOverlay" class="recording-caption-overlay" hidden onclick="openRecordingCaptionEditor()" title="눌러서 전체 글자막 보기"></div>
 
                 <div class="hand-pivot-container">
                   <div class="hand-hour-wrapper" id="mainHourHand"><div class="hour-gold-tip-wrap"><img id="hourGoldImg" class="hour-gold-tip gold-sync-target" alt=""><span id="hourNumText" class="hand-time-text hour-text">12</span></div></div>
@@ -3247,23 +3279,11 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
           const localTranscript = await stopLiveSpeechRecognition();
           if(localTranscript){
             appendTranscribedText(localTranscript);
-            const writer=document.getElementById('compactWriter');
-            const title=document.getElementById('compactWriterTitle');
             const input=document.getElementById('dialContentInput');
-            if(title) title.textContent='녹음 글자막';
-            if(writer) writer.hidden=false;
-            if(input){
-              input.scrollTop=input.scrollHeight;
-              setTimeout(()=>{
-                try{
-                  input.focus();
-                  input.setSelectionRange(input.value.length,input.value.length);
-                }catch(_){ }
-              },80);
-            }
+            updateRecordingCaptionOverlay(input?.value || localTranscript);
             setSpeechStatus('✓ 녹음 직후 글자막 생성 완료');
             setTimeout(()=>setSpeechStatus(''),1600);
-            window.showToast('✅ 녹음 + 글자막 생성 완료');
+            window.showToast('✅ 녹음 + 글자막 생성 완료 · 화면에 표시됩니다');
           }else{
             await createCaptionFromRecording(blob);
           }
@@ -4069,6 +4089,27 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
       return btoa(binary);
     }
 
+    function updateRecordingCaptionOverlay(text){
+      const overlay=document.getElementById('recordingCaptionOverlay');
+      if(!overlay) return;
+      const value=String(text ?? document.getElementById('dialContentInput')?.value ?? '').trim();
+      if(!value){
+        overlay.textContent='';
+        overlay.hidden=true;
+        return;
+      }
+      overlay.textContent=value;
+      overlay.hidden=false;
+    }
+    window.updateRecordingCaptionOverlay=updateRecordingCaptionOverlay;
+
+    function openRecordingCaptionEditor(){
+      openCompactWriter();
+      const title=document.getElementById('compactWriterTitle');
+      if(title) title.textContent='녹음 글자막';
+    }
+    window.openRecordingCaptionEditor=openRecordingCaptionEditor;
+
     function appendTranscribedText(text){
       const input=document.getElementById('dialContentInput');
       if(!input)return;
@@ -4081,6 +4122,7 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
       window.__currentContributionStarted = true;
       input.dispatchEvent(new Event('input',{bubbles:true}));
       input.scrollTop=input.scrollHeight;
+      updateRecordingCaptionOverlay(input.value);
     }
 
     async function createCaptionFromRecording(blob){
@@ -4095,25 +4137,9 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
           return false;
         }
 
-        const writer=document.getElementById('compactWriter');
-        const title=document.getElementById('compactWriterTitle');
         const input=document.getElementById('dialContentInput');
-
-        if(title) title.textContent='녹음 글자막';
-        if(writer) writer.hidden=false;
-
-        // 변환된 글이 바로 보이도록 아래쪽으로 이동하고 초점을 준다.
-        if(input){
-          input.scrollTop=input.scrollHeight;
-          setTimeout(()=>{
-            try{
-              input.focus();
-              input.setSelectionRange(input.value.length,input.value.length);
-            }catch(_){}
-          },80);
-        }
-
-        window.showToast('✅ 녹음 + 글자막 생성 완료');
+        updateRecordingCaptionOverlay(input?.value || recognized);
+        window.showToast('✅ 녹음 + 글자막 생성 완료 · 화면에 표시됩니다');
         return true;
 
       }catch(err){
@@ -4391,6 +4417,7 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
 
     // ---------- 시계 ----------
     contentInput.addEventListener('input', (event) => {
+      updateRecordingCaptionOverlay(contentInput.value);
       // 실제 사용자가 글을 쓰거나 음성→글 결과가 들어온 뒤부터는
       // 그 사람의 현재 초안을 유지한다.
       if(window.__incomingRelay && contentInput.value.trim()){
