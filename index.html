@@ -1170,13 +1170,14 @@ window.addEventListener('DOMContentLoaded', async () => {
     .copyright-modal .modal-actions button{flex:1;min-width:120px;}
 
     .relay-badge{
-      position:absolute; left:50%; bottom:181px; transform:translateX(-50%);
-      z-index:34; background:rgba(10,14,22,.78);
-      border:1px solid rgba(125,211,252,.65); color:#e0f2fe;
-      font-size:10px; font-weight:800; letter-spacing:.2px;
-      padding:4px 9px; border-radius:999px;
-      box-shadow:0 4px 12px rgba(0,0,0,.5);
-      pointer-events:none; display:none; white-space:nowrap;
+      position:absolute; right:16px; bottom:174px; left:auto; transform:none;
+      z-index:34; background:rgba(10,14,22,.82);
+      border:1px solid rgba(125,211,252,.72); color:#f8fafc;
+      width:30px; height:30px; padding:0; border-radius:50%;
+      display:none; align-items:center; justify-content:center;
+      font-size:12px; font-weight:900; letter-spacing:0;
+      box-shadow:0 4px 12px rgba(0,0,0,.55),0 0 8px rgba(125,211,252,.12);
+      pointer-events:none; white-space:nowrap;
     }
 
     @media (max-width:600px){
@@ -1708,7 +1709,7 @@ window.addEventListener('DOMContentLoaded', async () => {
                 </div>
 
                 <div class="top-controls">
-                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v3.2.15 · category narration + original BGM">⚙️</button>
+                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v3.2.16 · relay number + direct screen recording">⚙️</button>
 
                   <div id="mainMenuPanel" class="control-panel" style="left:41px;top:0" hidden>
                     <button type="button" class="btn-custom" onclick="toggleSubPanel('backgroundPanel', event)">꾸미기</button>
@@ -1744,7 +1745,7 @@ window.addEventListener('DOMContentLoaded', async () => {
                     <button type="button" id="recordBtn" class="btn-custom action-primary" onclick="toggleRecording()">🎙 녹음</button>
                     <button type="button" id="playAudioBtn" class="btn-custom" onclick="playRecordedAudio()">▶ 재생</button>
                     <button type="button" id="stopAudioBtn" class="btn-custom" onclick="stopAllPlayback()">■ 중지</button>
-                    <label for="screenRecordUpload" class="btn-custom">📱 화면녹화</label>
+                    <button type="button" id="screenRecordBtn" class="btn-custom" onclick="toggleScreenRecording()">📱 화면녹화</button>
                     <button type="button" class="btn-custom" onclick="toggleCategoryNarrationMenu(event)">🔊 카테고리 낭독</button>
                     <div id="categoryNarrationMenu" class="category-narration-menu" hidden>
                       <select id="userCategorySelect" class="style-select" title="낭독 카테고리" onchange="updateCategoryNarrationHint()">
@@ -1875,16 +1876,19 @@ window.addEventListener('DOMContentLoaded', async () => {
       const hint=document.getElementById('relayWritingHint');
       if(!badge)return;
       const count=Number(window.currentRelayCount||0);
-      badge.style.display='block';
+      badge.style.display='flex';
 
       if(window.relayCompleted){
-        badge.textContent=`🏁 ${Math.max(1,count)}명 최종 완성`;
+        badge.textContent=String(Math.max(1,count));
+        badge.title=`${Math.max(1,count)}명 릴레이 완성`;
         if(hint) hint.textContent='완성된 릴레이 편지입니다';
       }else if(count>0){
-        badge.textContent=`✉️ ${count+1}번째 편지 · 이전 → 나`;
+        badge.textContent=String(count+1);
+        badge.title=`${count+1}번째 릴레이 편지`;
         if(hint) hint.textContent=`${count+1}번째 편지를 이어 써보세요`;
       }else{
-        badge.textContent='✉️ 첫 편지';
+        badge.textContent='1';
+        badge.title='첫 번째 릴레이 편지';
         if(hint) hint.textContent='한 줄을 남겨보세요';
       }
     };
@@ -2898,7 +2902,7 @@ window.addEventListener('DOMContentLoaded', async () => {
       }
 
       const mb = (f.size / (1024 * 1024)).toFixed(1);
-      window.showToast(`📱 화면녹화 적용 · ${mb}MB · 재생으로 확인하세요`);
+      window.showToast(`📱 화면녹화 파일 적용 · ${mb}MB · 재생으로 확인하세요`);
       e.target.value = '';
     });
 
@@ -3033,10 +3037,141 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
     let recordingSourceStream = null;
     let currentAudio = null;
     let currentObjectUrl = null;
+
+    // PC/브라우저 직접 화면녹화
+    let screenMediaRecorder = null;
+    let screenCaptureStream = null;
+    let screenCaptureChunks = [];
     let liveSpeechRecognition = null;
     let liveSpeechTranscript = '';
     let liveSpeechRecognitionActive = false;
     let liveSpeechEndResolver = null;
+
+    function getBestScreenRecordingOptions(){
+      const candidates=[
+        'video/webm;codecs=vp9,opus',
+        'video/webm;codecs=vp8,opus',
+        'video/webm'
+      ];
+      for(const mimeType of candidates){
+        try{
+          if(window.MediaRecorder?.isTypeSupported?.(mimeType)){
+            return {mimeType,videoBitsPerSecond:2500000,audioBitsPerSecond:128000};
+          }
+        }catch(_){}
+      }
+      return {};
+    }
+
+    function stopScreenCaptureTracks(){
+      try{ screenCaptureStream?.getTracks?.().forEach(t=>t.stop()); }catch(_){}
+      screenCaptureStream=null;
+    }
+
+    async function toggleScreenRecording(){
+      const btn=document.getElementById('screenRecordBtn');
+
+      if(screenMediaRecorder && screenMediaRecorder.state==='recording'){
+        try{ screenMediaRecorder.requestData?.(); }catch(_){}
+        btn && (btn.disabled=true);
+        if(btn) btn.textContent='처리 중...';
+        try{ screenMediaRecorder.stop(); }catch(_){ stopScreenCaptureTracks(); }
+        return;
+      }
+
+      if(!requireCopyrightConsent()) return;
+
+      if(!navigator.mediaDevices?.getDisplayMedia || !window.MediaRecorder){
+        window.showToast('📂 직접 녹화를 지원하지 않아 녹화파일 선택창을 엽니다');
+        document.getElementById('screenRecordUpload')?.click();
+        return;
+      }
+
+      try{
+        screenCaptureChunks=[];
+        screenCaptureStream=await navigator.mediaDevices.getDisplayMedia({
+          video:{frameRate:{ideal:30,max:30}},
+          audio:true
+        });
+
+        const opts=getBestScreenRecordingOptions();
+        try{
+          screenMediaRecorder=Object.keys(opts).length
+            ? new MediaRecorder(screenCaptureStream,opts)
+            : new MediaRecorder(screenCaptureStream);
+        }catch(_){
+          screenMediaRecorder=new MediaRecorder(screenCaptureStream);
+        }
+
+        screenMediaRecorder.ondataavailable=e=>{
+          if(e.data && e.data.size>0) screenCaptureChunks.push(e.data);
+        };
+
+        screenMediaRecorder.onerror=e=>{
+          console.error('Screen recording error:',e);
+          stopScreenCaptureTracks();
+          if(btn){ btn.disabled=false; btn.classList.remove('recording'); btn.textContent='📱 화면녹화'; }
+          window.showToast('❌ 화면녹화 오류');
+        };
+
+        screenMediaRecorder.onstop=()=>{
+          const mime=screenMediaRecorder?.mimeType || screenCaptureChunks[0]?.type || 'video/webm';
+          const blob=new Blob(screenCaptureChunks,{type:mime});
+          const hasAudio=(screenCaptureStream?.getAudioTracks?.().length||0)>0;
+          stopScreenCaptureTracks();
+          screenCaptureChunks=[];
+
+          if(btn){ btn.disabled=false; btn.classList.remove('recording'); btn.textContent='📱 화면녹화'; }
+
+          if(!blob.size){
+            window.showToast('❌ 화면녹화 데이터가 없습니다');
+            return;
+          }
+
+          window.screenRecordingBlob=blob;
+          window.recordedAudioBlob=blob;
+          window.recordedAudioSource='screen';
+          window.remoteAudioUrl='';
+
+          const playBtn=document.getElementById('playAudioBtn');
+          if(playBtn){
+            playBtn.style.display='block';
+            playBtn.textContent='▶ 화면녹화 소리';
+          }
+          const playbackControls=document.getElementById('audioPlaybackControls');
+          if(playbackControls) playbackControls.style.display='grid';
+
+          const mb=(blob.size/(1024*1024)).toFixed(1);
+          window.showToast(`✅ 화면녹화 완료 · ${mb}MB${hasAudio?' · 소리 포함':' · 영상만'}`);
+        };
+
+        const videoTrack=screenCaptureStream.getVideoTracks?.()[0];
+        if(videoTrack){
+          videoTrack.addEventListener('ended',()=>{
+            if(screenMediaRecorder?.state==='recording'){
+              try{ screenMediaRecorder.stop(); }catch(_){}
+            }
+          },{once:true});
+        }
+
+        screenMediaRecorder.start(500);
+        if(btn){ btn.disabled=false; btn.classList.add('recording'); btn.textContent='■ 화면녹화 끝'; }
+        const audioTracks=screenCaptureStream.getAudioTracks?.()||[];
+        window.showToast(audioTracks.length
+          ? '🔴 화면녹화 중 · 화면 공유를 끝내거나 버튼을 다시 누르세요'
+          : '🔴 화면녹화 중 · 소리도 필요하면 공유창에서 시스템 오디오를 켜세요');
+      }catch(err){
+        stopScreenCaptureTracks();
+        if(btn){ btn.disabled=false; btn.classList.remove('recording'); btn.textContent='📱 화면녹화'; }
+        if(err?.name==='NotAllowedError' || err?.name==='AbortError'){
+          window.showToast('화면녹화 선택이 취소되었습니다');
+        }else{
+          console.error('getDisplayMedia failed:',err);
+          window.showToast('❌ 화면녹화를 시작할 수 없습니다');
+        }
+      }
+    }
+    window.toggleScreenRecording=toggleScreenRecording;
 
     function getBestRecordingOptions() {
       const candidates = [
