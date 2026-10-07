@@ -1138,10 +1138,10 @@ window.addEventListener('DOMContentLoaded', async () => {
       letter-spacing:.2px;
     }
     .app-info-button{
-      position:fixed;
-      right:10px;
-      bottom:10px;
-      z-index:500;
+      position:absolute;
+      right:12px;
+      bottom:12px;
+      z-index:120;
       border:1px solid rgba(148,163,184,.65);
       background:rgba(15,23,42,.82);
       color:#cbd5e1;
@@ -1708,7 +1708,7 @@ window.addEventListener('DOMContentLoaded', async () => {
                 </div>
 
                 <div class="top-controls">
-                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v3.2.14 · category narration + original BGM">⚙️</button>
+                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v3.2.15 · category narration + original BGM">⚙️</button>
 
                   <div id="mainMenuPanel" class="control-panel" style="left:41px;top:0" hidden>
                     <button type="button" class="btn-custom" onclick="toggleSubPanel('backgroundPanel', event)">꾸미기</button>
@@ -1849,6 +1849,8 @@ window.addEventListener('DOMContentLoaded', async () => {
                   <div class="hand-minute-wrapper" id="mainMinuteHand"><div class="minute-gold-tip-wrap"><img id="minGoldImg" class="minute-gold-tip gold-sync-target" alt=""><span id="minNumText" class="hand-time-text minute-text">00</span></div></div>
                   <div class="hand-second-floating" id="secondHandPivot"><div class="second-meteorite-wrap" id="secondMeteoriteWrap"><img id="secGoldImg" class="second-meteorite gold-sync-target" alt=""></div></div>
                 </div>
+
+                <button type="button" id="appInfoButton" class="app-info-button" onclick="openAppInfo()">ⓘ 정보</button>
               </div>
             </div>
           </div>
@@ -4714,7 +4716,6 @@ ${preset.outro}`;
     requestAnimationFrame(tickWatch);
   </script>
 
-  <button type="button" id="appInfoButton" class="app-info-button" onclick="openAppInfo()">ⓘ 정보</button>
 
   <div id="completedRelayOverlay" class="completed-relay-overlay" hidden>
     <div class="completed-relay-sheet">
