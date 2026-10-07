@@ -1734,7 +1734,7 @@ window.addEventListener('DOMContentLoaded', async () => {
                 </div>
 
                 <div class="top-controls">
-                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v3.2.17 · narration length guide">⚙️</button>
+                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v3.2.18 · narration length guide">⚙️</button>
 
                   <div id="mainMenuPanel" class="control-panel" style="left:41px;top:0" hidden>
                     <button type="button" class="btn-custom" onclick="toggleSubPanel('backgroundPanel', event)">꾸미기</button>
@@ -2974,6 +2974,35 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
       openCopyrightGuide();
       return false;
     }
+
+    function openScreenRecordingConsent(){
+      openCopyrightModal('화면녹화 사용 권리 확인', `
+        <p>본인이 직접 제작했거나 적법하게 사용할 권한이 있는 화면·음원만 녹화해주세요.</p>
+        <ul>
+          <li>본인의 화면·사진·문서·자작 콘텐츠: 사용 가능</li>
+          <li>권한을 받은 영상·음원: 허용 범위 안에서 사용</li>
+          <li>상업 음원·유료 영상·타인의 저작물을 무단 녹화·공유하면 권리 문제가 생길 수 있습니다.</li>
+        </ul>
+        <p>아래 버튼을 누르면 이 확인을 저장하고 곧바로 PC 화면 선택창을 엽니다.</p>
+        <div class="modal-actions">
+          <button type="button" class="btn-custom action-primary" onclick="acceptCopyrightAndStartScreenRecording()">✓ 동의하고 화면녹화 시작</button>
+          <button type="button" class="btn-custom" onclick="closeCopyrightModal()">취소</button>
+        </div>
+      `);
+    }
+    window.openScreenRecordingConsent=openScreenRecordingConsent;
+
+    async function acceptCopyrightAndStartScreenRecording(){
+      try{
+        localStorage.setItem(COPYRIGHT_CONSENT_KEY,'yes');
+      }catch(_){ }
+      const box=document.getElementById('copyrightConsent');
+      if(box) box.checked=true;
+      closeCopyrightModal();
+      // 이 클릭 자체가 사용자 제스처이므로 바로 화면 선택창을 열 수 있다.
+      await toggleScreenRecording(true);
+    }
+    window.acceptCopyrightAndStartScreenRecording=acceptCopyrightAndStartScreenRecording;
     function openCopyrightModal(title, bodyHtml){
       const backdrop=document.getElementById('copyrightModalBackdrop');
       const titleEl=document.getElementById('copyrightModalTitle');
@@ -3093,7 +3122,7 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
       screenCaptureStream=null;
     }
 
-    async function toggleScreenRecording(){
+    async function toggleScreenRecording(consentAlreadyConfirmed=false){
       const btn=document.getElementById('screenRecordBtn');
 
       if(screenMediaRecorder && screenMediaRecorder.state==='recording'){
@@ -3104,7 +3133,15 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
         return;
       }
 
-      if(!requireCopyrightConsent()) return;
+      if(!consentAlreadyConfirmed && !hasCopyrightConsent()){
+        openScreenRecordingConsent();
+        return;
+      }
+
+      // 기존/이번 세션의 동의 상태를 UI와 저장값에 동기화한다.
+      try{ localStorage.setItem(COPYRIGHT_CONSENT_KEY,'yes'); }catch(_){ }
+      const consentBox=document.getElementById('copyrightConsent');
+      if(consentBox) consentBox.checked=true;
 
       if(!navigator.mediaDevices?.getDisplayMedia || !window.MediaRecorder){
         window.showToast('📂 직접 녹화를 지원하지 않아 녹화파일 선택창을 엽니다');
@@ -3192,7 +3229,11 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
           window.showToast('화면녹화 선택이 취소되었습니다');
         }else{
           console.error('getDisplayMedia failed:',err);
-          window.showToast('❌ 화면녹화를 시작할 수 없습니다');
+          if(location.protocol!=='https:' && !['localhost','127.0.0.1','::1'].includes(location.hostname)){
+            window.showToast('❌ 화면녹화는 HTTPS 또는 localhost에서 실행해주세요');
+          }else{
+            window.showToast('❌ 화면녹화를 시작할 수 없습니다');
+          }
         }
       }
     }
