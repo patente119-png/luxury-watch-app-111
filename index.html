@@ -1029,6 +1029,27 @@ window.addEventListener('DOMContentLoaded', async () => {
       font-size:11.5px;
       line-height:1.5;
     }
+    .narration-length-guide{
+      margin-top:5px;
+      padding:6px 7px;
+      border:1px solid rgba(125,211,252,.25);
+      border-radius:7px;
+      background:rgba(15,23,42,.74);
+      color:#cbd5e1;
+      font-size:9.4px;
+      line-height:1.35;
+    }
+    .narration-length-guide strong{color:#e0f2fe;}
+    .narration-length-stats{
+      display:flex;
+      justify-content:space-between;
+      gap:6px;
+      margin-top:4px;
+      color:#94a3b8;
+      font-size:9px;
+    }
+    .narration-length-stats.good{color:#86efac;}
+    .narration-length-stats.short{color:#fbbf24;}
     .compact-speech-btn,.compact-writer-done{
       width:100%;
       min-height:31px;
@@ -1700,6 +1721,10 @@ window.addEventListener('DOMContentLoaded', async () => {
                   <button type="button" onclick="closeCompactWriter()">×</button>
                 </div>
                 <textarea id="dialContentInput" rows="5" placeholder="직접 입력하세요"></textarea>
+                <div class="narration-length-guide" id="narrationLengthGuide">
+                  <strong>낭독 권장</strong> · 30초~1분 · 4~8문장 · 약 150~350자
+                  <div id="narrationLengthStats" class="narration-length-stats short"><span>0자</span><span>0문장</span></div>
+                </div>
                 <button type="button" class="compact-writer-done" onclick="closeCompactWriter()">✓ 완료</button>
               </div>
 
@@ -1709,7 +1734,7 @@ window.addEventListener('DOMContentLoaded', async () => {
                 </div>
 
                 <div class="top-controls">
-                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v3.2.16 · relay number + direct screen recording">⚙️</button>
+                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v3.2.17 · narration length guide">⚙️</button>
 
                   <div id="mainMenuPanel" class="control-panel" style="left:41px;top:0" hidden>
                     <button type="button" class="btn-custom" onclick="toggleSubPanel('backgroundPanel', event)">꾸미기</button>
@@ -3726,11 +3751,42 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
       }
     }
 
+    function getNarrationTextStats(text=''){
+      const cleaned=String(text||'').trim();
+      const chars=cleaned.replace(/\s/g,'').length;
+      let sentences=0;
+      if(cleaned){
+        const punctuationParts=cleaned.split(/[.!?。！？]+|\n+/).map(s=>s.trim()).filter(Boolean).length;
+        const koreanEndings=(cleaned.match(/(?:습니다|니다|어요|아요|죠|다)(?=\s|$)/g)||[]).length;
+        sentences=Math.max(1,punctuationParts,koreanEndings);
+      }
+      return { chars, sentences };
+    }
+
+    function updateNarrationLengthGuide(text=''){
+      const statsEl=document.getElementById('narrationLengthStats');
+      if(!statsEl) return;
+      const {chars,sentences}=getNarrationTextStats(text);
+      statsEl.innerHTML=`<span>${chars}자</span><span>${sentences}문장</span>`;
+      const good=(chars>=150 && chars<=350 && sentences>=4 && sentences<=8);
+      statsEl.classList.toggle('good',good);
+      statsEl.classList.toggle('short',!good);
+    }
+
+    function isNarrationTextShort(text=''){
+      const {chars,sentences}=getNarrationTextStats(text);
+      return chars<120 || sentences<3;
+    }
+
     async function playCategoryNarration(){
       const rawText=(document.getElementById('dialContentInput')?.value || '').trim();
       if(!rawText){
         window.showToast('먼저 편지 내용이나 녹음 글자막을 남겨주세요');
         return;
+      }
+
+      if(isNarrationTextShort(rawText)){
+        window.showToast('💡 조금 더 적으면 낭독의 감정과 호흡이 더 자연스럽게 살아납니다');
       }
 
       stopCategoryNarration(false);
@@ -4799,6 +4855,7 @@ ${preset.outro}`;
 
     // ---------- 스타일 ----------
     const contentInput=document.getElementById('dialContentInput');
+    updateNarrationLengthGuide(contentInput?.value || '');
     document.getElementById('fontFamilySelect').addEventListener('change',e=>contentInput.style.fontFamily=e.target.value);
     window.updateStorySceneUI?.();
     document.getElementById('fontSizeSelect').addEventListener('change',e=>contentInput.style.fontSize=e.target.value);
@@ -4820,6 +4877,7 @@ ${preset.outro}`;
     // ---------- 시계 ----------
     contentInput.addEventListener('input', (event) => {
       updateRecordingCaptionOverlay(contentInput.value);
+      updateNarrationLengthGuide(contentInput.value);
       // 실제 사용자가 글을 쓰거나 음성→글 결과가 들어온 뒤부터는
       // 그 사람의 현재 초안을 유지한다.
       if(window.__incomingRelay && contentInput.value.trim()){
