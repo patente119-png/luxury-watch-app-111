@@ -548,6 +548,7 @@ window.addEventListener('DOMContentLoaded', async () => {
         window.__incomingRelay = true;
         window.__isSharedRelayPage = true;
         window.__currentContributionStarted = false;
+        window.updateRelayBadge?.();
 
         const input = document.getElementById('dialContentInput');
         if (input) {
@@ -1734,7 +1735,7 @@ window.addEventListener('DOMContentLoaded', async () => {
                 </div>
 
                 <div class="top-controls">
-                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v3.2.20 · direct record + PC file import">⚙️</button>
+                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v3.2.21 · received relay number">⚙️</button>
 
                   <div id="mainMenuPanel" class="control-panel" style="left:41px;top:0" hidden>
                     <button type="button" class="btn-custom" onclick="toggleSubPanel('backgroundPanel', event)">꾸미기</button>
@@ -1902,12 +1903,20 @@ window.addEventListener('DOMContentLoaded', async () => {
       const hint=document.getElementById('relayWritingHint');
       if(!badge)return;
       const count=Number(window.currentRelayCount||0);
+      const viewingReceivedLink=!!window.__incomingRelay && !window.__currentContributionStarted;
       badge.style.display='flex';
 
       if(window.relayCompleted){
+        // 완성 링크는 최종 참여 번호를 숫자로만 표시한다.
         badge.textContent=String(Math.max(1,count));
-        badge.title=`${Math.max(1,count)}명 릴레이 완성`;
+        badge.title=`${Math.max(1,count)}번째 릴레이 완성본`;
         if(hint) hint.textContent='완성된 릴레이 편지입니다';
+      }else if(viewingReceivedLink && count>0){
+        // 받은 링크를 처음 열었을 때는 '다음 사람 번호'가 아니라
+        // 내가 받은 릴레이가 몇 번째 결과인지 숫자로만 보여준다.
+        badge.textContent=String(count);
+        badge.title=`받은 ${count}번째 릴레이 편지`;
+        if(hint) hint.textContent=`${count}번째 릴레이 편지를 받았습니다`;
       }else if(count>0){
         badge.textContent=String(count+1);
         badge.title=`${count+1}번째 릴레이 편지`;
@@ -5004,7 +5013,9 @@ ${preset.outro}`;
       // 실제 사용자가 글을 쓰거나 음성→글 결과가 들어온 뒤부터는
       // 그 사람의 현재 초안을 유지한다.
       if(window.__incomingRelay && contentInput.value.trim()){
+        const wasStarted=window.__currentContributionStarted;
         window.__currentContributionStarted = true;
+        if(!wasStarted) window.updateRelayBadge?.();
       }
       window.aiNarratorBlob = null;
       window.remoteNarratorAudioUrl = '';
