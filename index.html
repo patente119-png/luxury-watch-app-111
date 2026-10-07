@@ -1734,7 +1734,7 @@ window.addEventListener('DOMContentLoaded', async () => {
                 </div>
 
                 <div class="top-controls">
-                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v3.2.19 · direct screen record + brighter glow">⚙️</button>
+                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v3.2.20 · direct record + PC file import">⚙️</button>
 
                   <div id="mainMenuPanel" class="control-panel" style="left:41px;top:0" hidden>
                     <button type="button" class="btn-custom" onclick="toggleSubPanel('backgroundPanel', event)">꾸미기</button>
@@ -1770,7 +1770,8 @@ window.addEventListener('DOMContentLoaded', async () => {
                     <button type="button" id="recordBtn" class="btn-custom action-primary" onclick="toggleRecording()">🎙 녹음</button>
                     <button type="button" id="playAudioBtn" class="btn-custom" onclick="playRecordedAudio()">▶ 재생</button>
                     <button type="button" id="stopAudioBtn" class="btn-custom" onclick="stopAllPlayback()">■ 중지</button>
-                    <button type="button" id="screenRecordBtn" class="btn-custom" onclick="toggleScreenRecording()">📱 화면녹화</button>
+                    <button type="button" id="screenRecordBtn" class="btn-custom" onclick="toggleScreenRecording()">🖥 직접 화면녹화</button>
+                    <button type="button" id="screenRecordFileBtn" class="btn-custom" onclick="openScreenRecordingFilePicker()">📂 녹화파일 불러오기</button>
                     <button type="button" class="btn-custom" onclick="toggleCategoryNarrationMenu(event)">🔊 카테고리 낭독</button>
                     <div id="categoryNarrationMenu" class="category-narration-menu" hidden>
                       <select id="userCategorySelect" class="style-select" title="낭독 카테고리" onchange="updateCategoryNarrationHint()">
@@ -2975,6 +2976,32 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
       return false;
     }
 
+    function openScreenRecordingFilePicker(){
+      if(hasCopyrightConsent()){
+        document.getElementById('screenRecordUpload')?.click();
+        return;
+      }
+      openCopyrightModal('화면녹화 파일 사용 권리 확인', `
+        <p>본인이 직접 녹화했거나 적법하게 사용할 권한이 있는 화면녹화 파일만 불러와주세요.</p>
+        <p>동의하면 내 PC의 화면녹화 파일 선택창을 엽니다.</p>
+        <div class="modal-actions">
+          <button type="button" class="btn-custom action-primary" onclick="acceptCopyrightAndOpenScreenFile()">✓ 동의하고 파일 선택</button>
+          <button type="button" class="btn-custom" onclick="closeCopyrightModal()">취소</button>
+        </div>
+      `);
+    }
+    window.openScreenRecordingFilePicker=openScreenRecordingFilePicker;
+
+    function acceptCopyrightAndOpenScreenFile(){
+      try{ localStorage.setItem(COPYRIGHT_CONSENT_KEY,'yes'); }catch(_){}
+      const box=document.getElementById('copyrightConsent');
+      if(box) box.checked=true;
+      closeCopyrightModal();
+      // 같은 클릭 동작 안에서 PC 파일 선택창을 연다.
+      document.getElementById('screenRecordUpload')?.click();
+    }
+    window.acceptCopyrightAndOpenScreenFile=acceptCopyrightAndOpenScreenFile;
+
     function openScreenRecordingConsent(){
       openCopyrightModal('화면녹화 사용 권리 확인', `
         <p>본인이 직접 제작했거나 적법하게 사용할 권한이 있는 화면·음원만 녹화해주세요.</p>
@@ -3128,7 +3155,7 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
       const btn=document.getElementById('screenRecordBtn');
 
       if(!navigator.mediaDevices?.getDisplayMedia || !window.MediaRecorder){
-        window.showToast('📂 직접 화면녹화를 지원하지 않아 녹화파일 선택창을 엽니다');
+        window.showToast('📂 직접 녹화를 지원하지 않아 PC 녹화파일 선택창을 엽니다');
         document.getElementById('screenRecordUpload')?.click();
         return false;
       }
@@ -3171,7 +3198,7 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
           if(btn){
             btn.disabled=false;
             btn.classList.remove('recording');
-            btn.textContent='📱 화면녹화';
+            btn.textContent='🖥 직접 화면녹화';
           }
           window.showToast('❌ 화면녹화 오류');
         };
@@ -3187,7 +3214,7 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
           if(btn){
             btn.disabled=false;
             btn.classList.remove('recording');
-            btn.textContent='📱 화면녹화';
+            btn.textContent='🖥 직접 화면녹화';
           }
 
           if(!blob.size){
@@ -3243,7 +3270,7 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
         if(btn){
           btn.disabled=false;
           btn.classList.remove('recording');
-          btn.textContent='📱 화면녹화';
+          btn.textContent='🖥 직접 화면녹화';
         }
 
         console.error('getDisplayMedia failed:',err);
@@ -3279,7 +3306,7 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
           if(btn){
             btn.disabled=false;
             btn.classList.remove('recording');
-            btn.textContent='📱 화면녹화';
+            btn.textContent='🖥 직접 화면녹화';
           }
         }
         return;
