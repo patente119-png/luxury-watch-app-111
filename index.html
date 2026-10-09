@@ -33,6 +33,9 @@
     window.recordedAudioBlob = null;
     window.recordedAudioSource = '';
     window.remoteAudioUrl = '';
+    // 본인 마이크 녹음은 화면녹화 소리와 분리해서 보존한다.
+    window.voiceRecordingBlob = null;
+    window.remoteVoiceAudioUrl = '';
     window.screenRecordingBlob = null;
     window.aiNarratorBlob = null;
     window.remoteNarratorAudioUrl = '';
@@ -56,7 +59,7 @@
     window.storyPlaybackAudio = null;
     window.storyPlaybackIndex = -1;
 
-    const SCHEMA_VERSION = 8;
+    const SCHEMA_VERSION = 9;
 
     function newWatchId() {
       if (window.crypto?.getRandomValues) {
@@ -157,6 +160,7 @@
         narratorAudioUrl: raw.narratorAudioUrl || '',
         audioUrl: raw.audioUrl || '',
         audioKind: raw.audioKind || '',
+        voiceAudioUrl: raw.voiceAudioUrl || '',
         backgroundUrl: raw.backgroundUrl || '',
         backgroundType: raw.backgroundType || '',
         backgroundPlaylist: Array.isArray(raw.backgroundPlaylist) ? raw.backgroundPlaylist : [],
@@ -274,6 +278,7 @@
         // 다음 주자의 문서에는 앞사람의 음성/배경을 소유 미디어처럼 복제하지 않는다.
         // 화면에서는 앞사람 상태를 볼 수 있어도, 새 기록에는 본인이 새로 고른 것만 저장한다.
         let audioUrl = window.__isSharedRelayPage ? '' : (window.remoteAudioUrl || '');
+        let voiceAudioUrl = window.__isSharedRelayPage ? '' : (window.remoteVoiceAudioUrl || '');
         let narratorAudioUrl = '';
         let backgroundUrl = window.__isSharedRelayPage ? '' : (window.remoteBackgroundUrl || '');
         let backgroundType = window.__isSharedRelayPage ? '' : (window.remoteBackgroundType || '');
@@ -285,6 +290,17 @@
           window.showToast?.(isScreenRecording ? '📱 화면녹화 소리 업로드 중...' : '🎙️ 음성 업로드 중...');
           const ext = extFromBlob(window.recordedAudioBlob, isScreenRecording ? 'mp4' : 'webm');
           audioUrl = await uploadBlob(`audio_letters/${docId}.${ext}`, window.recordedAudioBlob);
+        }
+
+        // 본인 마이크 녹음은 화면녹화 소리와 별도로 보존한다.
+        if(window.voiceRecordingBlob?.size){
+          if(window.recordedAudioSource==='mic' && window.recordedAudioBlob===window.voiceRecordingBlob && audioUrl){
+            voiceAudioUrl=audioUrl;
+          }else{
+            window.showToast?.('🎙️ 본인 목소리 업로드 중...');
+            const voiceExt=extFromBlob(window.voiceRecordingBlob,'webm');
+            voiceAudioUrl=await uploadBlob(`voice_letters/${docId}.${voiceExt}`,window.voiceRecordingBlob);
+          }
         }
 
         // AI 내레이터가 새로 생성되었으면 MP3를 Storage에 저장
@@ -384,6 +400,7 @@
           narrationCategory: document.getElementById('userCategorySelect')?.value || 'general',
           narratorAudioUrl,
           audioUrl,
+          voiceAudioUrl,
           audioKind: window.screenRecordingBlob
             ? 'screen'
             : (window.recordedAudioBlob ? 'recording' : ''),
@@ -1771,7 +1788,7 @@ window.addEventListener('DOMContentLoaded', async () => {
                 </div>
 
                 <div class="top-controls">
-                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v3.2.22 · second hand UI">⚙️</button>
+                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v3.2.23 · hands + current caption + voice sequence">⚙️</button>
 
                   <div id="mainMenuPanel" class="control-panel" style="left:41px;top:0" hidden>
                     <button type="button" class="btn-custom" onclick="toggleSubPanel('backgroundPanel', event)">꾸미기</button>
@@ -1790,7 +1807,7 @@ window.addEventListener('DOMContentLoaded', async () => {
                       <option value="30">전환 30초</option>
                       <option value="60">전환 60초</option>
                     </select>
-                    <button type="button" class="btn-custom" onclick="toggleSecondHandMenu(event)">🕒 초침 선택</button>
+                    <button type="button" class="btn-custom" onclick="toggleSecondHandMenu(event)">🕒 시·분·초침 선택</button>
                     <div id="secondHandPresetGroup" class="nested-submenu" hidden>
                       <button type="button" class="btn-custom second-preset-card" data-preset-key="gold_nugget" onclick="applyBuiltInMeteor('gold_nugget')">
                         <img data-preset-thumb="gold_nugget" alt="금덩어리"><span>금덩어리</span>
@@ -1805,7 +1822,7 @@ window.addEventListener('DOMContentLoaded', async () => {
                         <img data-preset-thumb="memory_meteor" alt="추억 운석"><span>추억 운석</span>
                       </button>
                       <button type="button" id="secondHandReverseBtn" class="btn-custom second-preset-wide" onclick="toggleSecondHandReverse()" aria-pressed="false">🔄 청춘을 돌려다오</button>
-                      <label for="fileMeteoriteUpload" class="btn-custom second-preset-wide">🖼 사용자 초침</label>
+                      <label for="fileMeteoriteUpload" class="btn-custom second-preset-wide">🖼 사용자 바늘</label>
                     </div>
                     <input type="file" id="filePhotoUpload" accept="image/*" multiple style="display:none">
                     <input type="file" id="fileVideoUpload" accept="video/*" multiple style="display:none">
@@ -1839,7 +1856,7 @@ window.addEventListener('DOMContentLoaded', async () => {
                         <option value="calm">calm</option>
                         <option value="bright">bright</option>
                       </select>
-                      <button type="button" class="btn-custom action-primary" onclick="playCategoryNarration()">▶ 멘트 + BGM 낭독</button>
+                      <button type="button" class="btn-custom action-primary" onclick="playCategoryNarration()">▶ 성우 + 내 목소리 + 성우</button>
                       <button type="button" class="btn-custom" onclick="stopCategoryNarration()">■ 낭독 중지</button>
                       <div id="categoryNarrationHint" class="category-narration-hint"></div>
                     </div>
@@ -2308,13 +2325,13 @@ window.addEventListener('DOMContentLoaded', async () => {
       window.selectedMeteorPreset = presetKey;
       window.customMeteorBlob = null;
       window.remoteMeteorUrl = '';
-      setSecondHandImageSource(preset.src);
+      setHandImageSource(preset.src);
       syncSecondHandPresetUI();
       if(!opts.keepMenuOpen){
         const group=document.getElementById('secondHandPresetGroup');
         if(group) group.hidden=true;
       }
-      if(!opts.silent) window.showToast(`✨ 초침 적용 · ${preset.name}`);
+      if(!opts.silent) window.showToast(`✨ 시·분·초침 적용 · ${preset.name}`);
     }
     window.applyBuiltInMeteor = applyBuiltInMeteor;
 
@@ -2334,23 +2351,25 @@ window.addEventListener('DOMContentLoaded', async () => {
     }
     window.toggleSecondHandReverse=toggleSecondHandReverse;
 
-    function setSecondHandImageSource(source){
-      const img=document.getElementById('secGoldImg');
-      if(!img) return;
-      img.classList.remove('hand-image-ready');
-      img.removeAttribute('src');
-      if(!source) return;
-      img.onload=()=>{ img.classList.add('hand-image-ready'); };
-      img.onerror=()=>{
+    function setHandImageSource(source){
+      ['hourGoldImg','minGoldImg','secGoldImg'].forEach(id=>{
+        const img=document.getElementById(id);
+        if(!img) return;
         img.classList.remove('hand-image-ready');
         img.removeAttribute('src');
-      };
-      img.src=source;
+        if(!source) return;
+        img.onload=()=>{ img.classList.add('hand-image-ready'); };
+        img.onerror=()=>{
+          img.classList.remove('hand-image-ready');
+          img.removeAttribute('src');
+        };
+        img.src=source;
+      });
     }
-    window.setSecondHandImageSource=setSecondHandImageSource;
-    // Backward-compatible alias: previous builds called this name. It now changes only the second hand.
-    function setHandImageSource(source){ setSecondHandImageSource(source); }
     window.setHandImageSource=setHandImageSource;
+    // 구버전 호환: 시·분·초침 모두 같은 테마 이미지를 사용한다.
+    function setSecondHandImageSource(source){ setHandImageSource(source); }
+    window.setSecondHandImageSource=setSecondHandImageSource;
 
     // Default startup: gold second hand, normal clockwise rotation.
     applyBuiltInMeteor(window.selectedMeteorPreset, { silent:true });
@@ -2487,7 +2506,9 @@ window.addEventListener('DOMContentLoaded', async () => {
       updateCategoryNarrationHint?.();
 
       window.recordedAudioBlob=null;
+      window.voiceRecordingBlob=null;
       window.remoteAudioUrl=data.audioUrl||'';
+      window.remoteVoiceAudioUrl=data.voiceAudioUrl || (data.audioKind==='recording' ? (data.audioUrl||'') : '');
       window.remoteNarratorAudioUrl=data.narratorAudioUrl||'';
       const playBtn=document.getElementById('playAudioBtn');
       playBtn.style.display=window.remoteAudioUrl?'block':'none';
@@ -2525,7 +2546,7 @@ window.addEventListener('DOMContentLoaded', async () => {
       window.remoteMeteorUrl=data.meteorUrl||'';
       window.selectedMeteorPreset=data.meteorPreset || window.selectedMeteorPreset || 'gold_nugget';
       window.secondHandReverse=!!data.secondHandReverse;
-      if(window.remoteMeteorUrl) setSecondHandImageSource(window.remoteMeteorUrl);
+      if(window.remoteMeteorUrl) setHandImageSource(window.remoteMeteorUrl);
       else applyBuiltInMeteor(window.selectedMeteorPreset, { silent:true });
       syncSecondHandPresetUI();
       if(data.uiPositions){
@@ -2834,6 +2855,7 @@ window.addEventListener('DOMContentLoaded', async () => {
           savedAt:new Date().toISOString()
         }));
         if(window.recordedAudioBlob) await dbPut('audio',window.recordedAudioBlob);
+        if(window.voiceRecordingBlob) await dbPut('voiceAudio',window.voiceRecordingBlob);
         if(window.customBackgroundBlob) await dbPut('background',{blob:window.customBackgroundBlob,type:window.customBackgroundType});
         if(window.customMeteorBlob) await dbPut('meteor',window.customMeteorBlob);
         window.showToast('✅ 저장 완료');
@@ -2874,20 +2896,21 @@ window.addEventListener('DOMContentLoaded', async () => {
           window.updateRelayBadge?.();
           window.updateStorySceneUI?.();
         }
-        const audio=await dbGet('audio'); if(audio){window.recordedAudioBlob=audio; window.recordedAudioSource=(audio.type||'').startsWith('video/')?'screen':'mic'; const b=document.getElementById('playAudioBtn'); if(b){b.style.display='block'; b.textContent='▶ 재생';} const pc=document.getElementById('audioPlaybackControls'); if(pc) pc.style.display='grid';}
+        const audio=await dbGet('audio'); if(audio){window.recordedAudioBlob=audio; window.recordedAudioSource=(audio.type||'').startsWith('video/')?'screen':'mic'; if(window.recordedAudioSource==='mic') window.voiceRecordingBlob=audio; const b=document.getElementById('playAudioBtn'); if(b){b.style.display='block'; b.textContent='▶ 재생';} const pc=document.getElementById('audioPlaybackControls'); if(pc) pc.style.display='grid';}
+        const voiceAudio=await dbGet('voiceAudio'); if(voiceAudio?.size) window.voiceRecordingBlob=voiceAudio;
         const bg=await dbGet('background'); if(bg?.blob){window.customBackgroundBlob=bg.blob;window.customBackgroundType=bg.type;window.applyBackground(URL.createObjectURL(bg.blob),bg.type);}
         const meteor=await dbGet('meteor');
         if(meteor){
           window.customMeteorBlob=meteor;
           window.remoteMeteorUrl='';
           const handUrl=URL.createObjectURL(meteor);
-          setSecondHandImageSource(handUrl);
+          setHandImageSource(handUrl);
           syncSecondHandPresetUI();
         } else {
           applyBuiltInMeteor(window.selectedMeteorPreset || 'gold_nugget', { silent:true });
         }
         syncSecondHandPresetUI();
-        if(raw||audio||bg||meteor) window.showToast('💾 저장 상태 복원 완료');
+        if(raw||audio||voiceAudio||bg||meteor) window.showToast('💾 저장 상태 복원 완료');
       }catch(err){console.error('restore error',err);}
     };
 
@@ -3036,11 +3059,11 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
       window.remoteMeteorUrl='';
       window.selectedMeteorPreset='';
       const handUrl=URL.createObjectURL(f);
-      setSecondHandImageSource(handUrl);
+      setHandImageSource(handUrl);
       syncSecondHandPresetUI();
       const group=document.getElementById('secondHandPresetGroup');
       if(group) group.hidden=true;
-      window.showToast('🕰️ 사용자 초침 이미지 적용');
+      window.showToast('🕰️ 사용자 시·분·초침 이미지 적용');
     });
 
 
@@ -3628,7 +3651,17 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
         window.recordedAudioBlob = null;
         window.recordedAudioSource = '';
         window.remoteAudioUrl = '';
+        window.voiceRecordingBlob = null;
+        window.remoteVoiceAudioUrl = '';
         audioChunks = [];
+
+        // 재녹음을 시작하는 순간 이전 녹음 자막을 지운다.
+        const recordingTextInput=document.getElementById('dialContentInput');
+        if(recordingTextInput){
+          recordingTextInput.value='';
+          recordingTextInput.dispatchEvent(new Event('input',{bubbles:true}));
+        }
+        updateRecordingCaptionOverlay('');
 
         const recordMode = document.getElementById('recordModeSelect')?.value || 'voice';
 
@@ -3699,6 +3732,8 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
           window.recordedAudioBlob = blob;
           window.recordedAudioSource = 'mic';
           window.remoteAudioUrl = '';
+          window.voiceRecordingBlob = blob;
+          window.remoteVoiceAudioUrl = '';
 
           const playBtn = document.getElementById('playAudioBtn');
           if (playBtn) {
@@ -3887,6 +3922,8 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
     let categoryNarratorAudio = null;
     let categoryNarratorObjectUrl = '';
     let categoryNarratorController = null;
+    let categoryUserVoiceAudio = null;
+    let categoryUserVoiceObjectUrl = '';
 
     function getSelectedNarrationPreset(){
       const key=document.getElementById('userCategorySelect')?.value || 'general';
@@ -3938,6 +3975,14 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
         try{ categoryNarratorAudio.pause(); categoryNarratorAudio.currentTime=0; }catch(_){}
       }
       categoryNarratorAudio=null;
+      if(categoryUserVoiceAudio){
+        try{ categoryUserVoiceAudio.pause(); categoryUserVoiceAudio.currentTime=0; }catch(_){}
+      }
+      categoryUserVoiceAudio=null;
+      if(categoryUserVoiceObjectUrl){
+        try{ URL.revokeObjectURL(categoryUserVoiceObjectUrl); }catch(_){}
+        categoryUserVoiceObjectUrl='';
+      }
       if(categoryNarratorObjectUrl){
         try{ URL.revokeObjectURL(categoryNarratorObjectUrl); }catch(_){}
         categoryNarratorObjectUrl='';
@@ -3948,88 +3993,45 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
     }
     window.stopCategoryNarration=stopCategoryNarration;
 
-    async function categoryBrowserNarratorFallback(text, gender, mood, preset){
-      if(!('speechSynthesis' in window)){
-        stopCategoryBgm();
-        window.showToast('❌ 낭독 음성을 재생할 수 없습니다');
-        return;
-      }
-      const utter=new SpeechSynthesisUtterance(makeWarmNarrationText(text));
-      utter.lang='ko-KR';
-      utter.volume=1;
-      utter.rate=mood==='calm' ? 0.88 : (mood==='bright' ? 0.98 : 0.92);
-      utter.pitch=gender==='male' ? 0.90 : 1.02;
-      const voice=chooseFallbackVoice(gender);
-      if(voice) utter.voice=voice;
-      utter.onend=()=>{ stopCategoryBgm(); window.showToast(`✅ ${preset.label} 낭독 완료`); };
-      utter.onerror=()=>{ stopCategoryBgm(); window.showToast('❌ 낭독 재생 오류'); };
-      await startCategoryBgm(preset);
-      try{ speechSynthesis.cancel(); speechSynthesis.resume(); speechSynthesis.speak(utter); }catch(err){
-        stopCategoryBgm();
-        console.error(err);
-      }
+    function playHtmlAudioAndWait(audio){
+      return new Promise((resolve,reject)=>{
+        if(!audio) return reject(new Error('audio missing'));
+        audio.onended=()=>resolve();
+        audio.onerror=()=>reject(new Error('audio playback failed'));
+        const p=audio.play();
+        if(p?.catch) p.catch(reject);
+      });
     }
 
-    function getNarrationTextStats(text=''){
-      const cleaned=String(text||'').trim();
-      const chars=cleaned.replace(/\s/g,'').length;
-      let sentences=0;
-      if(cleaned){
-        const punctuationParts=cleaned.split(/[.!?。！？]+|\n+/).map(s=>s.trim()).filter(Boolean).length;
-        const koreanEndings=(cleaned.match(/(?:습니다|니다|어요|아요|죠|다)(?=\s|$)/g)||[]).length;
-        sentences=Math.max(1,punctuationParts,koreanEndings);
-      }
-      return { chars, sentences };
+    function speakBrowserSegment(text,gender,mood){
+      return new Promise((resolve,reject)=>{
+        if(!('speechSynthesis' in window)) return reject(new Error('speech synthesis unavailable'));
+        const utter=new SpeechSynthesisUtterance(makeWarmNarrationText(text));
+        utter.lang='ko-KR';
+        utter.volume=1;
+        utter.rate=mood==='calm' ? 0.88 : (mood==='bright' ? 0.98 : 0.92);
+        utter.pitch=gender==='male' ? 0.90 : 1.02;
+        const voice=chooseFallbackVoice(gender);
+        if(voice) utter.voice=voice;
+        utter.onend=resolve;
+        utter.onerror=()=>reject(new Error('browser narration failed'));
+        try{ speechSynthesis.cancel(); speechSynthesis.resume(); speechSynthesis.speak(utter); }
+        catch(err){ reject(err); }
+      });
     }
 
-    function updateNarrationLengthGuide(text=''){
-      const statsEl=document.getElementById('narrationLengthStats');
-      if(!statsEl) return;
-      const {chars,sentences}=getNarrationTextStats(text);
-      statsEl.innerHTML=`<span>${chars}자</span><span>${sentences}문장</span>`;
-      const good=(chars>=150 && chars<=350 && sentences>=4 && sentences<=8);
-      statsEl.classList.toggle('good',good);
-      statsEl.classList.toggle('short',!good);
-    }
-
-    function isNarrationTextShort(text=''){
-      const {chars,sentences}=getNarrationTextStats(text);
-      return chars<120 || sentences<3;
-    }
-
-    async function playCategoryNarration(){
-      const rawText=(document.getElementById('dialContentInput')?.value || '').trim();
-      if(!rawText){
-        window.showToast('먼저 편지 내용이나 녹음 글자막을 남겨주세요');
-        return;
-      }
-
-      if(isNarrationTextShort(rawText)){
-        window.showToast('💡 조금 더 적으면 낭독의 감정과 호흡이 더 자연스럽게 살아납니다');
-      }
-
-      stopCategoryNarration(false);
-      const preset=getSelectedNarrationPreset();
-      const gender=document.getElementById('narratorSelect')?.value || 'female';
-      const mood=preset.mood || 'warm';
-      const fullText=`${preset.intro}
-
-${rawText}
-
-${preset.outro}`;
-      window.showToast(`🎧 ${preset.label} 낭독 준비 중...`);
-
+    async function playNarratorSegment(text,gender,mood,segmentName){
       try{
         categoryNarratorController=new AbortController();
         const res=await fetch('/api/tts',{
           method:'POST',
           headers:{'Content-Type':'application/json'},
           body:JSON.stringify({
-            text:fullText,
+            text,
             gender,
             style:'professional',
             mood,
-            styleVersion:'category-narration-v1'
+            styleVersion:`category-narration-v2-${segmentName}`
           }),
           signal:categoryNarratorController.signal
         });
@@ -4037,26 +4039,106 @@ ${preset.outro}`;
         const blob=await res.blob();
         if(!blob.size) throw new Error('empty narration');
 
+        if(categoryNarratorObjectUrl){
+          try{ URL.revokeObjectURL(categoryNarratorObjectUrl); }catch(_){}
+        }
         categoryNarratorObjectUrl=URL.createObjectURL(blob);
         categoryNarratorAudio=new Audio(categoryNarratorObjectUrl);
         categoryNarratorAudio.playsInline=true;
-        categoryNarratorAudio.onended=()=>{
-          stopCategoryBgm();
-          window.showToast(`✅ ${preset.label} 낭독 완료`);
-        };
-        categoryNarratorAudio.onerror=()=>{
-          stopCategoryBgm();
-          window.showToast('❌ 낭독 음성 재생 실패');
-        };
-        await startCategoryBgm(preset);
-        await categoryNarratorAudio.play();
-        window.showToast(`🔊 ${preset.label} · BGM과 함께 낭독 중`);
+        await playHtmlAudioAndWait(categoryNarratorAudio);
       }catch(err){
-        if(err?.name==='AbortError') return;
-        console.warn('Category narration API failed; using browser voice',err);
-        await categoryBrowserNarratorFallback(fullText,gender,mood,preset);
+        if(err?.name==='AbortError') throw err;
+        console.warn(`Narrator ${segmentName} API failed; browser fallback`,err);
+        await speakBrowserSegment(text,gender,mood);
       }finally{
         categoryNarratorController=null;
+      }
+    }
+
+    function getOwnVoiceSource(){
+      if(window.voiceRecordingBlob?.size){
+        if(categoryUserVoiceObjectUrl){
+          try{ URL.revokeObjectURL(categoryUserVoiceObjectUrl); }catch(_){}
+        }
+        categoryUserVoiceObjectUrl=URL.createObjectURL(window.voiceRecordingBlob);
+        return categoryUserVoiceObjectUrl;
+      }
+      // 다음 작성자가 받은 앞사람 목소리를 자기 목소리로 재사용하지 않는다.
+      if(!window.__isSharedRelayPage && window.remoteVoiceAudioUrl) return window.remoteVoiceAudioUrl;
+      if(window.recordedAudioSource==='mic' && window.recordedAudioBlob?.size){
+        categoryUserVoiceObjectUrl=URL.createObjectURL(window.recordedAudioBlob);
+        return categoryUserVoiceObjectUrl;
+      }
+      return '';
+    }
+
+    async function playOwnVoiceSegment(){
+      const src=getOwnVoiceSource();
+      if(!src) throw new Error('no own voice recording');
+      categoryUserVoiceAudio=new Audio(src);
+      categoryUserVoiceAudio.playsInline=true;
+      categoryUserVoiceAudio.volume=1;
+      await playHtmlAudioAndWait(categoryUserVoiceAudio);
+    }
+
+    async function fadeOutCategoryBgm(duration=3000){
+      if(!categoryBgmAudio) return;
+      const audio=categoryBgmAudio;
+      const startVolume=audio.volume;
+      const started=performance.now();
+      await new Promise(resolve=>{
+        const step=now=>{
+          if(!categoryBgmAudio || audio!==categoryBgmAudio) return resolve();
+          const t=Math.min(1,(now-started)/duration);
+          audio.volume=startVolume*(1-t);
+          if(t<1) requestAnimationFrame(step);
+          else resolve();
+        };
+        requestAnimationFrame(step);
+      });
+      stopCategoryBgm();
+    }
+
+    async function playCategoryNarration(){
+      const preset=getSelectedNarrationPreset();
+      const gender=document.getElementById('narratorSelect')?.value || 'female';
+      const mood=preset.mood || 'warm';
+
+      if(!getOwnVoiceSource()){
+        window.showToast('🎙 먼저 본인 목소리를 녹음해주세요');
+        return;
+      }
+
+      stopCategoryNarration(false);
+      window.showToast(`🎧 ${preset.label} · 성우 도입 준비 중...`);
+
+      try{
+        await startCategoryBgm(preset);
+        if(categoryBgmAudio) categoryBgmAudio.volume=0.14;
+
+        // 1. 성우 도입
+        await playNarratorSegment(preset.intro,gender,mood,'intro');
+
+        // 2. 본인 실제 마이크 녹음
+        if(categoryBgmAudio) categoryBgmAudio.volume=0.08;
+        window.showToast('🎙 본인 녹음 목소리 재생 중');
+        await playOwnVoiceSegment();
+
+        // 3. 같은 성우의 마무리
+        if(categoryBgmAudio) categoryBgmAudio.volume=0.14;
+        window.showToast('🎧 성우 마무리 낭독 중');
+        await playNarratorSegment(preset.outro,gender,mood,'outro');
+
+        // 4. BGM만 3초 페이드아웃
+        if(categoryBgmAudio) categoryBgmAudio.volume=0.20;
+        window.showToast('🎵 BGM 마무리 중...');
+        await fadeOutCategoryBgm(3000);
+        window.showToast(`✅ ${preset.label} 낭독 완료`);
+      }catch(err){
+        if(err?.name==='AbortError') return;
+        console.error('Category narration sequence failed',err);
+        stopCategoryNarration(false);
+        window.showToast(err?.message==='no own voice recording' ? '🎙 본인 녹음이 필요합니다' : '❌ 낭독 재생 오류');
       }
     }
     window.playCategoryNarration=playCategoryNarration;
@@ -4794,12 +4876,12 @@ ${preset.outro}`;
       const cleaned=String(text||'').trim();
       if(!cleaned)return;
 
-      const before=input.value.trim();
-      input.value=before ? `${before}\n${cleaned}` : cleaned;
+      // 글박스에는 이번 녹음에서 변환된 글자만 표시한다.
+      input.value=cleaned;
       window.__currentContributionStarted = true;
       input.dispatchEvent(new Event('input',{bubbles:true}));
-      input.scrollTop=input.scrollHeight;
-      updateRecordingCaptionOverlay(input.value);
+      input.scrollTop=0;
+      updateRecordingCaptionOverlay(cleaned);
     }
 
     async function createCaptionFromRecording(blob){
