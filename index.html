@@ -1858,7 +1858,7 @@ window.addEventListener('DOMContentLoaded', async () => {
                 </div>
 
                 <div class="top-controls">
-                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v3.2.28 · no direct screen recording">⚙️</button>
+                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v3.2.29 · live clock failsafe">⚙️</button>
 
                   <div id="mainMenuPanel" class="control-panel" style="left:41px;top:0" hidden>
                     <button type="button" class="btn-custom" onclick="toggleSubPanel('backgroundPanel', event)">꾸미기</button>
@@ -5258,6 +5258,80 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
       </div>
     </div>
   </div>
+
+
+  <!-- TIME RELAY independent live clock failsafe.
+       Kept in a separate script so the clock continues even if another feature throws an error. -->
+  <script>
+  (()=>{
+    const months=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+    const days=['SUN','MON','TUE','WED','THU','FRI','SAT'];
+    let timer=null;
+
+    function updateTimeRelayClock(){
+      const now=new Date();
+      const h=now.getHours();
+      const m=now.getMinutes();
+      const s=now.getSeconds();
+      const ms=now.getMilliseconds();
+
+      const status=document.getElementById('currentTimeStatus');
+      if(status){
+        const hh=String(h).padStart(2,'0');
+        const mm=String(m).padStart(2,'0');
+        const ss=String(s).padStart(2,'0');
+        status.textContent=`${hh}:${mm}:${ss}`;
+        status.title=`현재시간 ${hh}:${mm}:${ss}`;
+      }
+
+      const hourHand=document.getElementById('mainHourHand');
+      const minHand=document.getElementById('mainMinuteHand');
+      const secPivot=document.getElementById('secondHandPivot');
+      const secWrap=document.getElementById('secondMeteoriteWrap');
+      const hourText=document.getElementById('hourNumText');
+      const minText=document.getElementById('minNumText');
+
+      const direction=window.secondHandReverse ? -1 : 1;
+      const secAngle=direction*((s+ms/1000)/60)*360;
+      const minAngle=((m+s/60)/60)*360;
+      const hourAngle=(((h%12)+m/60)/12)*360;
+
+      if(secPivot) secPivot.style.transform=`rotate(${secAngle}deg)`;
+      if(secWrap) secWrap.style.transform=`translate(-50%,-50%) rotate(${-secAngle}deg)`;
+      if(minHand) minHand.style.transform=`rotate(${minAngle}deg)`;
+      if(hourHand) hourHand.style.transform=`rotate(${hourAngle}deg)`;
+      if(hourText){
+        hourText.textContent=(h%12)||12;
+        hourText.style.transform=`rotate(-${hourAngle}deg)`;
+      }
+      if(minText){
+        minText.textContent=String(m).padStart(2,'0');
+        minText.style.transform=`rotate(-${minAngle}deg)`;
+      }
+
+      const ym=document.getElementById('calYearMonth');
+      const day=document.getElementById('calDay');
+      const date=document.getElementById('calDate');
+      if(ym) ym.textContent=`${now.getFullYear()} ${months[now.getMonth()]}`;
+      if(day) day.textContent=days[now.getDay()];
+      if(date) date.textContent=String(now.getDate()).padStart(2,'0');
+    }
+
+    function schedule(){
+      if(timer) clearInterval(timer);
+      updateTimeRelayClock();
+      timer=setInterval(updateTimeRelayClock,250);
+    }
+
+    schedule();
+    window.addEventListener('focus',updateTimeRelayClock);
+    window.addEventListener('pageshow',updateTimeRelayClock);
+    document.addEventListener('visibilitychange',()=>{
+      if(!document.hidden) updateTimeRelayClock();
+    });
+    window.__timeRelayClockRefresh=updateTimeRelayClock;
+  })();
+  </script>
 
 </body>
 </html>
