@@ -1858,7 +1858,7 @@ window.addEventListener('DOMContentLoaded', async () => {
                 </div>
 
                 <div class="top-controls">
-                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v3.2.26 · background dissolve">⚙️</button>
+                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v3.2.28 · no direct screen recording">⚙️</button>
 
                   <div id="mainMenuPanel" class="control-panel" style="left:41px;top:0" hidden>
                     <button type="button" class="btn-custom" onclick="toggleSubPanel('backgroundPanel', event)">꾸미기</button>
@@ -1909,7 +1909,6 @@ window.addEventListener('DOMContentLoaded', async () => {
                     <button type="button" id="recordBtn" class="btn-custom action-primary" onclick="toggleRecording()">🎙 녹음</button>
                     <button type="button" id="playAudioBtn" class="btn-custom" onclick="playRecordedAudio()">▶ 재생</button>
                     <button type="button" id="stopAudioBtn" class="btn-custom" onclick="stopAllPlayback()">■ 중지</button>
-                    <button type="button" id="screenRecordBtn" class="btn-custom" onclick="toggleScreenRecording()">🖥 직접 화면녹화</button>
                     <button type="button" id="screenRecordFileBtn" class="btn-custom" onclick="openScreenRecordingFilePicker()">📂 녹화파일 불러오기</button>
                     <button type="button" class="btn-custom" onclick="toggleCategoryNarrationMenu(event)">🔊 카테고리 낭독</button>
                     <div id="categoryNarrationMenu" class="category-narration-menu" hidden>
@@ -1978,9 +1977,11 @@ window.addEventListener('DOMContentLoaded', async () => {
 
                   <div id="saveSharePanel" class="control-panel relay-send-panel" style="left:159px;top:80px" hidden>
                     <div id="relayActiveActions">
-                      <div class="relay-media-note">🎬 영상 배경은 전달 시 첫 장면 정지 이미지로 변환</div>
+                      <div class="relay-media-note">릴레이: 영상은 첫 장면 정지 이미지로 전달</div>
                       <button type="button" class="btn-custom" onclick="saveAndCreateLink()">💾 저장</button>
-                      <button type="button" class="btn-custom relay-primary-send" onclick="shareSavedLink()">📨 다른 사람에게</button>
+                      <button type="button" class="btn-custom relay-primary-send" onclick="shareSavedLink()">📨 릴레이로 보내기</button>
+                      <button type="button" class="btn-custom" onclick="shareCurrentVideoFile()">🎬 영상 보내기</button>
+                      <div class="relay-media-note">영상 보내기: 릴레이와 별도로 원본 영상 파일 전달</div>
                       <button type="button" class="btn-custom" onclick="completeRelay()">🏁 최종 완성</button>
                     </div>
 
@@ -2365,6 +2366,107 @@ window.addEventListener('DOMContentLoaded', async () => {
       }
     }
     window.shareSavedLink=shareSavedLink;
+
+    function getCurrentSendableVideo(){
+      // 1) 현재 화면에 떠 있는 배경이 영상이면 그 영상을 최우선
+      const idx=Number(window.backgroundRotationIndex||0);
+      const playlist=Array.isArray(window.backgroundPlaylistBlobs) ? window.backgroundPlaylistBlobs : [];
+      const current=playlist[idx];
+      if(current?.type==='video' && current.blob?.size){
+        return {blob:current.blob, label:'현재 배경 영상'};
+      }
+
+      // 2) 현재 배경이 영상이 아니면 가장 최근에 추가된 배경 영상
+      for(let i=playlist.length-1;i>=0;i--){
+        const item=playlist[i];
+        if(item?.type==='video' && item.blob?.size){
+          return {blob:item.blob, label:'배경 영상'};
+        }
+      }
+
+      // 3) 별도로 만든/불러온 화면녹화 영상
+      if(window.screenRecordingBlob?.size){
+        return {blob:window.screenRecordingBlob, label:'화면녹화 영상'};
+      }
+
+      // 4) 단일 커스텀 배경 영상
+      if(window.customBackgroundType==='video' && window.customBackgroundBlob?.size){
+        return {blob:window.customBackgroundBlob, label:'배경 영상'};
+      }
+
+      return null;
+    }
+
+    function getVideoFileExtension(blob){
+      const type=String(blob?.type||'').toLowerCase();
+      if(type.includes('mp4')) return 'mp4';
+      if(type.includes('quicktime')) return 'mov';
+      if(type.includes('webm')) return 'webm';
+      if(type.includes('m4v')) return 'm4v';
+      return 'webm';
+    }
+
+    function buildTimeRelayVideoFile(blob){
+      if(blob instanceof File){
+        return blob;
+      }
+      const ext=getVideoFileExtension(blob);
+      const now=new Date();
+      const pad=n=>String(n).padStart(2,'0');
+      const stamp=`${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
+      return new File([blob],`TIME-RELAY-video-${stamp}.${ext}`,{
+        type:blob.type || (ext==='mp4'?'video/mp4':'video/webm')
+      });
+    }
+
+    async function downloadVideoFallback(file){
+      const url=URL.createObjectURL(file);
+      const a=document.createElement('a');
+      a.href=url;
+      a.download=file.name || 'TIME-RELAY-video.webm';
+      a.style.display='none';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(()=>URL.revokeObjectURL(url),1800);
+      window.showToast('📥 영상 파일을 저장했습니다 · 카톡/메일에서 첨부하세요');
+    }
+
+    async function shareCurrentVideoFile(){
+      const source=getCurrentSendableVideo();
+      if(!source){
+        window.showToast('🎬 보낼 영상이 없습니다 · 먼저 영상 또는 화면녹화를 추가하세요');
+        return;
+      }
+
+      const file=buildTimeRelayVideoFile(source.blob);
+
+      try{
+        if(navigator.share){
+          const payload={
+            title:'TIME RELAY 영상',
+            text:`TIME RELAY · ${source.label}`,
+            files:[file]
+          };
+
+          // canShare가 있는 브라우저에서는 파일 공유 가능 여부를 먼저 확인
+          if(!navigator.canShare || navigator.canShare({files:[file]})){
+            await navigator.share(payload);
+            window.showToast(`🎬 ${source.label} 공유 완료`);
+            return;
+          }
+        }
+      }catch(err){
+        if(err?.name==='AbortError'){
+          window.showToast('영상 공유를 취소했습니다');
+          return;
+        }
+        console.warn('Video share fallback:',err);
+      }
+
+      await downloadVideoFallback(file);
+    }
+    window.shareCurrentVideoFile=shareCurrentVideoFile;
 
     async function startRelayShare(){
       await shareSavedLink();
@@ -3239,36 +3341,7 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
     }
     window.acceptCopyrightAndOpenScreenFile=acceptCopyrightAndOpenScreenFile;
 
-    function openScreenRecordingConsent(){
-      openCopyrightModal('화면녹화 사용 권리 확인', `
-        <p>본인이 직접 제작했거나 적법하게 사용할 권한이 있는 화면·음원만 녹화해주세요.</p>
-        <ul>
-          <li>본인의 화면·사진·문서·자작 콘텐츠: 사용 가능</li>
-          <li>권한을 받은 영상·음원: 허용 범위 안에서 사용</li>
-          <li>상업 음원·유료 영상·타인의 저작물을 무단 녹화·공유하면 권리 문제가 생길 수 있습니다.</li>
-        </ul>
-        <p>아래 버튼을 누르면 이 확인을 저장하고 곧바로 PC 화면 선택창을 엽니다.</p>
-        <div class="modal-actions">
-          <button type="button" class="btn-custom action-primary" onclick="acceptCopyrightAndStartScreenRecording()">✓ 동의하고 화면녹화 시작</button>
-          <button type="button" class="btn-custom" onclick="closeCopyrightModal()">취소</button>
-        </div>
-      `);
-    }
-    window.openScreenRecordingConsent=openScreenRecordingConsent;
 
-    async function acceptCopyrightAndStartScreenRecording(){
-      try{
-        localStorage.setItem(COPYRIGHT_CONSENT_KEY,'yes');
-      }catch(_){}
-      const box=document.getElementById('copyrightConsent');
-      if(box) box.checked=true;
-
-      // 동의 버튼의 같은 사용자 클릭에서 바로 화면 선택 API를 호출한다.
-      // 브라우저의 사용자 제스처 제한으로 인해 다른 함수/타이머를 한 번 더 거치지 않는다.
-      await startScreenRecordingNow();
-      closeCopyrightModal();
-    }
-    window.acceptCopyrightAndStartScreenRecording=acceptCopyrightAndStartScreenRecording;
     function openCopyrightModal(title, bodyHtml){
       const backdrop=document.getElementById('copyrightModalBackdrop');
       const titleEl=document.getElementById('copyrightModalTitle');
@@ -3280,7 +3353,7 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
     window.closeCopyrightModal=closeCopyrightModal;
     function openCopyrightGuide(){
       openCopyrightModal('저작권 및 미디어 사용 안내', `
-        <p>본인이 직접 제작했거나 적법하게 사용할 권한이 있는 미디어만 사용해주세요.</p>
+        <p>본인이 직접 제작했거나 적법하게 사용할 권한이 있는 미디어 파일만 사용해주세요.</p>
         <ul>
           <li>본인이 직접 녹음한 목소리·자작음원: 사용 가능</li>
           <li>정식 라이선스를 받은 음원·영상: 허용 범위 안에서 사용</li>
@@ -3345,7 +3418,7 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
       return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
     }
 
-    // ---------- 화면녹화 오디오 가져오기 ----------
+    // ---------- 화면녹화 파일 오디오 가져오기 ----------
     // MP4/MOV/WebM 파일에서 브라우저가 지원하는 오디오 트랙을 직접 재생한다.
     // 별도 재인코딩 없이 원본 컨테이너를 사용한다.
 
@@ -3358,205 +3431,12 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
     let currentAudio = null;
     let currentObjectUrl = null;
 
-    // PC/브라우저 직접 화면녹화
-    let screenMediaRecorder = null;
-    let screenCaptureStream = null;
-    let screenCaptureChunks = [];
     let liveSpeechRecognition = null;
     let liveSpeechTranscript = '';
     let liveSpeechRecognitionActive = false;
     let liveSpeechEndResolver = null;
 
-    function getBestScreenRecordingOptions(){
-      const candidates=[
-        'video/webm;codecs=vp9,opus',
-        'video/webm;codecs=vp8,opus',
-        'video/webm'
-      ];
-      for(const mimeType of candidates){
-        try{
-          if(window.MediaRecorder?.isTypeSupported?.(mimeType)){
-            return {mimeType,videoBitsPerSecond:2500000,audioBitsPerSecond:128000};
-          }
-        }catch(_){}
-      }
-      return {};
-    }
 
-    function stopScreenCaptureTracks(){
-      try{ screenCaptureStream?.getTracks?.().forEach(t=>t.stop()); }catch(_){}
-      screenCaptureStream=null;
-    }
-
-    async function startScreenRecordingNow(){
-      const btn=document.getElementById('screenRecordBtn');
-
-      if(!navigator.mediaDevices?.getDisplayMedia || !window.MediaRecorder){
-        window.showToast('📂 직접 녹화를 지원하지 않아 PC 녹화파일 선택창을 엽니다');
-        document.getElementById('screenRecordUpload')?.click();
-        return false;
-      }
-
-      try{
-        screenCaptureChunks=[];
-
-        try{
-          screenCaptureStream=await navigator.mediaDevices.getDisplayMedia({
-            video:{frameRate:{ideal:30,max:30}},
-            audio:true
-          });
-        }catch(firstErr){
-          if(firstErr?.name==='TypeError' || firstErr?.name==='OverconstrainedError'){
-            screenCaptureStream=await navigator.mediaDevices.getDisplayMedia({
-              video:{frameRate:{ideal:30,max:30}},
-              audio:false
-            });
-          }else{
-            throw firstErr;
-          }
-        }
-
-        const opts=getBestScreenRecordingOptions();
-        try{
-          screenMediaRecorder=Object.keys(opts).length
-            ? new MediaRecorder(screenCaptureStream,opts)
-            : new MediaRecorder(screenCaptureStream);
-        }catch(_){
-          screenMediaRecorder=new MediaRecorder(screenCaptureStream);
-        }
-
-        screenMediaRecorder.ondataavailable=e=>{
-          if(e.data && e.data.size>0) screenCaptureChunks.push(e.data);
-        };
-
-        screenMediaRecorder.onerror=e=>{
-          console.error('Screen recording error:',e);
-          stopScreenCaptureTracks();
-          if(btn){
-            btn.disabled=false;
-            btn.classList.remove('recording');
-            btn.textContent='🖥 직접 화면녹화';
-          }
-          window.showToast('❌ 화면녹화 오류');
-        };
-
-        screenMediaRecorder.onstop=()=>{
-          const mime=screenMediaRecorder?.mimeType || screenCaptureChunks[0]?.type || 'video/webm';
-          const blob=new Blob(screenCaptureChunks,{type:mime});
-          const hasAudio=(screenCaptureStream?.getAudioTracks?.().length||0)>0;
-
-          stopScreenCaptureTracks();
-          screenCaptureChunks=[];
-
-          if(btn){
-            btn.disabled=false;
-            btn.classList.remove('recording');
-            btn.textContent='🖥 직접 화면녹화';
-          }
-
-          if(!blob.size){
-            window.showToast('❌ 화면녹화 데이터가 없습니다');
-            return;
-          }
-
-          window.screenRecordingBlob=blob;
-          window.recordedAudioBlob=blob;
-          window.recordedAudioSource='screen';
-          window.remoteAudioUrl='';
-
-          const playBtn=document.getElementById('playAudioBtn');
-          if(playBtn){
-            playBtn.style.display='block';
-            playBtn.textContent='▶ 화면녹화 소리';
-          }
-          const playbackControls=document.getElementById('audioPlaybackControls');
-          if(playbackControls) playbackControls.style.display='grid';
-
-          const mb=(blob.size/(1024*1024)).toFixed(1);
-          window.showToast(`✅ 화면녹화 완료 · ${mb}MB${hasAudio?' · 소리 포함':' · 영상만'}`);
-        };
-
-        const videoTrack=screenCaptureStream.getVideoTracks?.()[0];
-        if(videoTrack){
-          videoTrack.addEventListener('ended',()=>{
-            if(screenMediaRecorder?.state==='recording'){
-              try{ screenMediaRecorder.stop(); }catch(_){}
-            }
-          },{once:true});
-        }
-
-        screenMediaRecorder.start(500);
-
-        if(btn){
-          btn.disabled=false;
-          btn.classList.add('recording');
-          btn.textContent='■ 화면녹화 끝';
-        }
-
-        const audioTracks=screenCaptureStream.getAudioTracks?.()||[];
-        window.showToast(
-          audioTracks.length
-            ? '🔴 화면녹화 중 · 다시 누르면 종료됩니다'
-            : '🔴 화면녹화 중 · 시스템 소리는 공유창에서 오디오 공유를 켜주세요'
-        );
-        return true;
-
-      }catch(err){
-        stopScreenCaptureTracks();
-
-        if(btn){
-          btn.disabled=false;
-          btn.classList.remove('recording');
-          btn.textContent='🖥 직접 화면녹화';
-        }
-
-        console.error('getDisplayMedia failed:',err);
-
-        if(err?.name==='NotAllowedError'){
-          window.showToast('⚠️ 화면 공유 권한이 허용되지 않았습니다');
-        }else if(err?.name==='AbortError'){
-          window.showToast('화면 선택이 취소되었습니다');
-        }else if(location.protocol!=='https:' &&
-                 !['localhost','127.0.0.1','::1'].includes(location.hostname)){
-          window.showToast('❌ 화면녹화는 HTTPS 또는 localhost에서 실행해주세요');
-        }else{
-          window.showToast(`❌ 화면녹화 실패 · ${err?.name||'브라우저 오류'}`);
-        }
-        return false;
-      }
-    }
-    window.startScreenRecordingNow=startScreenRecordingNow;
-
-    async function toggleScreenRecording(){
-      const btn=document.getElementById('screenRecordBtn');
-
-      if(screenMediaRecorder && screenMediaRecorder.state==='recording'){
-        try{ screenMediaRecorder.requestData?.(); }catch(_){}
-        if(btn){
-          btn.disabled=true;
-          btn.textContent='처리 중...';
-        }
-        try{
-          screenMediaRecorder.stop();
-        }catch(_){
-          stopScreenCaptureTracks();
-          if(btn){
-            btn.disabled=false;
-            btn.classList.remove('recording');
-            btn.textContent='🖥 직접 화면녹화';
-          }
-        }
-        return;
-      }
-
-      if(!hasCopyrightConsent()){
-        openScreenRecordingConsent();
-        return;
-      }
-
-      await startScreenRecordingNow();
-    }
-    window.toggleScreenRecording=toggleScreenRecording;
 
     function getBestRecordingOptions() {
       const candidates = [
