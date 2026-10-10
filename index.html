@@ -709,16 +709,27 @@ window.addEventListener('DOMContentLoaded', async () => {
     }
     .shooting-star{
       position:absolute; width:82px; height:1.5px; border-radius:999px;
-      background:linear-gradient(90deg,rgba(255,255,255,0),rgba(230,241,255,.38) 34%,rgba(248,252,255,.88) 78%,rgba(255,255,255,1));
+      /* 진행 방향은 왼쪽 아래. 머리는 왼쪽, 꼬리는 오른쪽 위에 남는다. */
+      background:linear-gradient(90deg,rgba(255,255,255,1),rgba(248,252,255,.88) 22%,rgba(230,241,255,.38) 66%,rgba(255,255,255,0));
       filter:drop-shadow(0 0 4px rgba(229,240,255,.90));
-      transform-origin:right center;
+      transform-origin:left center;
       opacity:0;
       will-change:transform,opacity;
       animation:shootingStarFly 12s linear infinite;
     }
     .shooting-star::after{
-      content:''; position:absolute; right:-1px; top:-1.4px; width:4.2px; height:4.2px; border-radius:50%;
+      content:''; position:absolute; left:-1px; top:-1.4px; width:4.2px; height:4.2px; border-radius:50%;
       background:#fff; box-shadow:0 0 8px rgba(255,255,255,1),0 0 17px rgba(215,232,255,.68);
+    }
+    .shooting-star.small{
+      width:34px;
+      height:1px;
+      filter:drop-shadow(0 0 2px rgba(229,240,255,.78));
+      opacity:0;
+    }
+    .shooting-star.small::after{
+      left:-.8px; top:-1px; width:2.6px; height:2.6px;
+      box-shadow:0 0 5px rgba(255,255,255,.92),0 0 9px rgba(215,232,255,.44);
     }
     @keyframes shootingStarFly{
       0%,76%{opacity:0;transform:translate3d(0,0,0) rotate(-32deg)}
@@ -1858,7 +1869,7 @@ window.addEventListener('DOMContentLoaded', async () => {
                 </div>
 
                 <div class="top-controls">
-                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v3.2.29 · live clock failsafe">⚙️</button>
+                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v3.2.30 · meteor tail fix + 5 small meteors">⚙️</button>
 
                   <div id="mainMenuPanel" class="control-panel" style="left:41px;top:0" hidden>
                     <button type="button" class="btn-custom" onclick="toggleSubPanel('backgroundPanel', event)">꾸미기</button>
@@ -2049,9 +2060,25 @@ window.addEventListener('DOMContentLoaded', async () => {
         {top:'38%',left:'108%',delay:'-8.1s',duration:'17.8s'},
         {top:'62%',left:'102%',delay:'-13.4s',duration:'21.0s'}
       ];
-      shooting.forEach((s,i)=>{
+      shooting.forEach((s)=>{
         const el=document.createElement('span');
         el.className='shooting-star';
+        el.style.top=s.top; el.style.left=s.left;
+        el.style.animationDelay=s.delay; el.style.animationDuration=s.duration;
+        layer.appendChild(el);
+      });
+
+      // 작은 별똥별 5개: 큰 별똥별보다 짧고 희미하며 서로 다른 간격으로 나타난다.
+      const smallShooting=[
+        {top:'9%', left:'98%', delay:'-4.1s', duration:'16.2s'},
+        {top:'27%',left:'103%',delay:'-10.7s',duration:'19.4s'},
+        {top:'46%',left:'101%',delay:'-1.8s',duration:'22.6s'},
+        {top:'71%',left:'106%',delay:'-15.3s',duration:'24.8s'},
+        {top:'82%',left:'100%',delay:'-7.2s',duration:'27.1s'}
+      ];
+      smallShooting.forEach((s)=>{
+        const el=document.createElement('span');
+        el.className='shooting-star small';
         el.style.top=s.top; el.style.left=s.left;
         el.style.animationDelay=s.delay; el.style.animationDuration=s.duration;
         layer.appendChild(el);
