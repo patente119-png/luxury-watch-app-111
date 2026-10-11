@@ -835,6 +835,20 @@ window.addEventListener('DOMContentLoaded', async () => {
       z-index:85;
     }
     .control-panel[hidden] { display:none; }
+    #mainMenuPanel{
+      max-height:none;
+      overflow:visible;
+    }
+    .graduation-main-button{
+      border-color:rgba(246,211,101,.62)!important;
+      color:#fff3b0!important;
+      background:rgba(92,62,8,.22)!important;
+    }
+    .graduation-main-button:hover{
+      border-color:#f6d365!important;
+      color:#fff8d8!important;
+      background:rgba(120,82,10,.34)!important;
+    }
     .btn-custom {
       background:var(--ui-bg-soft); border:1px solid var(--ui-border);
       color:var(--ui-text); font-size:11.5px; font-weight:650;
@@ -1956,13 +1970,13 @@ window.addEventListener('DOMContentLoaded', async () => {
                 </div>
 
                 <div class="top-controls">
-                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v3.2.36 · graduation main tab">⚙️</button>
+                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v3.2.37 · graduation tab fixed">⚙️</button>
 
                   <div id="mainMenuPanel" class="control-panel" style="left:41px;top:0" hidden>
                     <button type="button" class="btn-custom" onclick="toggleSubPanel('backgroundPanel', event)">꾸미기</button>
                     <button type="button" class="btn-custom" onclick="toggleSubPanel('soundPanel', event)">쓰기</button>
                     <button type="button" class="btn-custom" onclick="toggleSubPanel('saveSharePanel', event)">보내기</button>
-                    <button type="button" class="btn-custom" onclick="toggleGraduationMainPanel(event)">🎓 졸업</button>
+                    <button type="button" id="graduationMainBtn" class="btn-custom graduation-main-button" onclick="toggleGraduationMainPanel(event)">🎓 졸업</button>
                     <button type="button" class="btn-custom" onclick="resetUIPositions(); event.stopPropagation();">↺ 위치 복원</button>
                   </div>
 
@@ -1986,24 +2000,6 @@ window.addEventListener('DOMContentLoaded', async () => {
                       <option value="contain" selected>사진 · 전체 보기</option>
                       <option value="cover">사진 · 가득 채우기</option>
                     </select>
-                      <select id="graduationStageSelect" class="style-select" title="학령" onchange="renderGraduationOutfits()">
-                        <option value="kindergarten">유치원 · 어린이집</option>
-                        <option value="elementary">초등학교</option>
-                        <option value="middle">중학교</option>
-                        <option value="high" selected>고등학교</option>
-                        <option value="university">대학교 · 대학원</option>
-                        <option value="adult">성인 · 평생교육</option>
-                      </select>
-                      <select id="graduationOutfitCategorySelect" class="style-select" title="의상 분류" onchange="renderGraduationOutfits()">
-                        <option value="basic" selected>기본 졸업</option>
-                        <option value="career">꿈 · 직업</option>
-                        <option value="trend">현재 유행</option>
-                        <option value="memory">감성 · 추억</option>
-                      </select>
-                      <div id="graduationOutfitGrid" class="graduation-outfit-grid"></div>
-                      <div id="graduationOutfitNote" class="graduation-outfit-note">사진은 의상 스타일 예시입니다. 선택값은 졸업 릴레이/타임캡슐 정보에 함께 저장됩니다.</div>
-                    </div>
-                     
                     <button type="button" class="btn-custom" onclick="toggleSecondHandMenu(event)">🕒 시·분·초침 선택</button>
                     <div id="secondHandPresetGroup" class="nested-submenu" hidden>
                       <button type="button" class="btn-custom second-preset-card" data-preset-key="gold_nugget" onclick="applyBuiltInMeteor('gold_nugget')">
@@ -2026,9 +2022,26 @@ window.addEventListener('DOMContentLoaded', async () => {
                     <input type="file" id="fileMeteoriteUpload" accept="image/*" style="display:none">
                   </div>
 
-                  <div id="graduationMainPanel" class="control-panel compact-action-panel graduation-main-panel" style="left:159px;top:120px" hidden>
-<div id="graduationOutfitWrap" class="graduation-outfit-wrap">
+                  <div id="graduationMainPanel" class="control-panel compact-action-panel graduation-main-panel" style="left:159px;top:108px" hidden>
+                    <div id="graduationOutfitWrap" class="graduation-outfit-wrap">
                       <div class="graduation-outfit-title">🎓 졸업의상 · 미래의 나</div>
+                      <select id="graduationStageSelect" class="style-select" title="학령" onchange="renderGraduationOutfits()">
+                        <option value="kindergarten">유치원 · 어린이집</option>
+                        <option value="elementary">초등학교</option>
+                        <option value="middle">중학교</option>
+                        <option value="high" selected>고등학교</option>
+                        <option value="university">대학교 · 대학원</option>
+                        <option value="adult">성인 · 평생교육</option>
+                      </select>
+                      <select id="graduationOutfitCategorySelect" class="style-select" title="의상 분류" onchange="renderGraduationOutfits()">
+                        <option value="basic" selected>기본 졸업</option>
+                        <option value="career">꿈 · 직업</option>
+                        <option value="trend">현재 유행</option>
+                        <option value="memory">감성 · 추억</option>
+                      </select>
+                      <div id="graduationOutfitGrid" class="graduation-outfit-grid"></div>
+                      <div id="graduationOutfitNote" class="graduation-outfit-note">사진은 의상 스타일 예시입니다. 선택값은 졸업 릴레이/타임캡슐 정보에 함께 저장됩니다.</div>
+                    </div>
                   </div>
 
                   <div id="soundPanel" class="control-panel compact-action-panel" style="left:159px;top:40px" hidden>
@@ -4175,18 +4188,24 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
     function toggleGraduationMainPanel(event){
       event?.stopPropagation?.();
       const panel=document.getElementById('graduationMainPanel');
+      const main=document.getElementById('mainMenuPanel');
       if(!panel) return;
       const open=panel.hidden;
       document.querySelectorAll('.control-panel').forEach(p=>{
-        if(p!==document.getElementById('mainMenuPanel')) p.hidden=true;
+        if(p!==main && p!==panel) p.hidden=true;
       });
       panel.hidden=!open;
       if(open){
         const categorySel=document.getElementById('userCategorySelect');
         if(categorySel) categorySel.value='graduation';
+        const stage=document.getElementById('graduationStageSelect');
+        const category=document.getElementById('graduationOutfitCategorySelect');
+        if(stage) stage.value=window.selectedGraduationStage||'high';
+        if(category) category.value=window.selectedGraduationOutfitCategory||'basic';
         renderGraduationOutfits();
         requestAnimationFrame(()=>{
           try{ layoutMainMenu(); }catch(_){}
+          try{ layoutSubMenu?.('graduationMainPanel'); }catch(_){}
         });
       }
     }
@@ -5174,7 +5193,7 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
 
     function relayoutOpenMenus(){
       layoutMainMenu();
-      ['backgroundPanel','soundPanel','saveSharePanel'].forEach(id=>{
+      ['backgroundPanel','soundPanel','saveSharePanel','graduationMainPanel'].forEach(id=>{
         const el=document.getElementById(id);
         if(el && !el.hidden) layoutSubMenu(id);
       });
