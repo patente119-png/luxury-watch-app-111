@@ -6,7 +6,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <title>TIME RELAY · V19 소방관카드 직접연결</title>
+  <title>TIME RELAY · V21 얼굴1회등록 의상선택 구조개편</title>
   <link rel="preconnect" href="https://fonts.googleapis.com/">
   <link rel="preconnect" href="https://fonts.gstatic.com/" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Inter:wght@400;600;800;900&family=JetBrains+Mono:wght@500;700&family=Nanum+Myeongjo:wght@700;800&family=Noto+Sans+KR:wght@400;700;900&family=Noto+Serif+KR:wght@400;700;900&display=swap" rel="stylesheet">
@@ -2145,6 +2145,18 @@ window.addEventListener('DOMContentLoaded', async () => {
   object-position:center 38% !important;
   filter:brightness(1.01) contrast(1.04) saturate(1.01) !important;
   image-rendering:auto !important;
+}
+</style>
+
+
+<style>
+.graduation-engine-note{
+  font-size:7.2px;
+  line-height:1.2;
+  text-align:center;
+  color:#67e8f9;
+  font-weight:800;
+  padding-bottom:2px;
 }
 </style>
 
@@ -6151,7 +6163,7 @@ window.addEventListener('DOMContentLoaded',()=>{
     if(item){
       window.selectedGraduationOutfit='teacher';
       applyGraduationOutfitToMain('teacher',item);
-      window.showToast?.('✅ V17 교사 · 교수 사진 직접 적용');
+      
     }
   }, true);
 });
@@ -6171,7 +6183,7 @@ window.addEventListener('DOMContentLoaded',()=>{
     if(item){
       window.selectedGraduationOutfit='medical';
       applyGraduationOutfitToMain('medical',item);
-      window.showToast?.('✅ V18 의료인 사진 직접 적용');
+      
     }
   }, true);
 });
@@ -6191,10 +6203,95 @@ window.addEventListener('DOMContentLoaded',()=>{
     if(item){
       window.selectedGraduationOutfit='firefighter';
       applyGraduationOutfitToMain('firefighter',item);
-      window.showToast?.('✅ V19 소방관 사진 직접 적용');
+      
     }
   }, true);
 });
+</script>
+
+
+<script>
+(() => {
+  window.TIME_RELAY_FACE_ENGINE = {
+    version: 'V21',
+    faceRegistered: false,
+    registeredFaceName: '',
+    outfitCache: Object.create(null),
+    lastSelectedOutfit: ''
+  };
+
+  function updateV21Status(text){
+    const status = document.getElementById('graduationFaceStatus');
+    if(status && text) status.textContent = text;
+  }
+
+  function clearV21Cache(){
+    window.TIME_RELAY_FACE_ENGINE.outfitCache = Object.create(null);
+  }
+
+  window.registerFaceOnce = function(file){
+    if(!file) return;
+    window.TIME_RELAY_FACE_ENGINE.faceRegistered = true;
+    window.TIME_RELAY_FACE_ENGINE.registeredFaceName = file.name || '내 얼굴';
+    clearV21Cache();
+    updateV21Status('✓ 얼굴 1회 등록 완료 · 의상을 선택하세요');
+    try{ window.showToast?.('얼굴 등록 완료'); }catch(_){}
+  };
+
+  // 기존 얼굴 업로드 input에 1회 등록 흐름 연결
+  window.addEventListener('DOMContentLoaded', () => {
+    const input = document.getElementById('graduationFaceUpload');
+    const adjust = document.getElementById('graduationFaceAdjust');
+
+    if(adjust){
+      // 슬라이더와 버튼은 유지하되, 구조개편판에서는 보조 설정 정도로 둔다.
+      adjust.hidden = false;
+    }
+
+    input?.addEventListener('change', () => {
+      const file = input.files?.[0];
+      if(file) window.registerFaceOnce(file);
+    });
+
+    updateV21Status('얼굴 1회 등록 후 의상 선택 → 자동 표시');
+  });
+
+  // 기존 함수들을 보존
+  if(window.applyGraduationOutfitToMain && !window.__V21_FACE_ENGINE_WRAPPED__){
+    window.__LEGACY_applyGraduationOutfitToMain = window.applyGraduationOutfitToMain;
+
+    window.applyGraduationOutfitToMain = function(key, item){
+      window.TIME_RELAY_FACE_ENGINE.lastSelectedOutfit = key;
+
+      // 구조개편 핵심: 카테고리별 분기 대신 key 하나로 처리
+      // 현재 HTML 단독 버전에서는 각 key에 연결된 이미지를 공통 엔진이 불러오고,
+      // 이후 API 연결 시 이 지점에서 "face + outfit key"로 자동 생성/캐시하도록 확장한다.
+      const src = (typeof GRADUATION_OUTFIT_IMAGES === 'object' && GRADUATION_OUTFIT_IMAGES[key]) ? GRADUATION_OUTFIT_IMAGES[key] : '';
+      if(src) window.TIME_RELAY_FACE_ENGINE.outfitCache[key] = src;
+
+      return window.__LEGACY_applyGraduationOutfitToMain(key, item);
+    };
+
+    window.__V21_FACE_ENGINE_WRAPPED__ = true;
+  }
+
+  // 현재 의상 다시 표시 버튼을 범용 재표시 버튼으로 변경
+  window.applyGraduationFaceComposite = async function(){
+    const key = window.TIME_RELAY_FACE_ENGINE.lastSelectedOutfit || window.selectedGraduationOutfit;
+    if(!key){
+      updateV21Status('먼저 의상을 선택하세요');
+      return false;
+    }
+    const all = Object.values(window.GRADUATION_OUTFIT_PRESETS || {}).flat();
+    const item = all.find(x => x.key === key);
+    if(item){
+      updateV21Status('✓ 현재 의상 다시 표시');
+      window.applyGraduationOutfitToMain(key, item);
+      return true;
+    }
+    return false;
+  };
+})();
 </script>
 
 </body>
