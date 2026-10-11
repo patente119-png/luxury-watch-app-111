@@ -6,7 +6,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <title>TIME RELAY - 이어쓰는 시계편지 v3.2.2</title>
+  <title>TIME RELAY - 이어쓰는 시계편지 v3.2.40</title>
   <link rel="preconnect" href="https://fonts.googleapis.com/">
   <link rel="preconnect" href="https://fonts.gstatic.com/" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Inter:wght@400;600;800;900&family=JetBrains+Mono:wght@500;700&family=Nanum+Myeongjo:wght@700;800&family=Noto+Sans+KR:wght@400;700;900&family=Noto+Serif+KR:wght@400;700;900&display=swap" rel="stylesheet">
@@ -2005,7 +2005,7 @@ window.addEventListener('DOMContentLoaded', async () => {
                 </div>
 
                 <div class="top-controls">
-                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v3.2.39 · graduation panel visible">⚙️</button>
+                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v3.2.40 · graduation main apply fixed">⚙️</button>
 
                   <div id="mainMenuPanel" class="control-panel" style="left:41px;top:0" hidden>
                     <button type="button" class="btn-custom" onclick="toggleSubPanel('backgroundPanel', event)">꾸미기</button>
@@ -4187,6 +4187,63 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
     window.selectedGraduationStage = window.selectedGraduationStage || 'high';
     window.selectedGraduationOutfitCategory = window.selectedGraduationOutfitCategory || 'basic';
 
+    function dataUrlToBlob(dataUrl){
+      try{
+        const [meta,payload]=String(dataUrl||'').split(',',2);
+        if(!meta || !payload) return null;
+        const mime=(meta.match(/data:([^;]+)/)||[])[1] || 'image/jpeg';
+        const binary=meta.includes(';base64') ? atob(payload) : decodeURIComponent(payload);
+        const bytes=new Uint8Array(binary.length);
+        for(let i=0;i<binary.length;i++) bytes[i]=binary.charCodeAt(i);
+        return new Blob([bytes],{type:mime});
+      }catch(err){
+        console.error('Graduation image conversion failed:',err);
+        return null;
+      }
+    }
+
+    function closeGraduationPanelsForFullPreview(){
+      document.querySelectorAll('.control-panel').forEach(panel=>panel.hidden=true);
+      document.getElementById('mainMenuBtn')?.classList.remove('opened');
+    }
+
+    function applyGraduationOutfitToMain(key,item){
+      const imageSrc=GRADUATION_OUTFIT_IMAGES[key]||'';
+      if(!imageSrc) return false;
+
+      // 졸업 의상은 세로/가로 비율이 달라도 잘리지 않도록 전체 보기(contain)를 기본 적용한다.
+      window.photoFitMode='contain';
+      const fitSelect=document.getElementById('photoFitSelect');
+      if(fitSelect) fitSelect.value='contain';
+
+      // 이전 배경 자동전환이 선택 사진을 다시 덮어쓰지 않도록 정지한다.
+      clearBackgroundRotationTimer();
+      window.backgroundRotationIndex=0;
+      window.remoteBackgroundUrl='';
+      window.remoteBackgroundType='';
+
+      // 내장 졸업의상 이미지를 일반 사진 배경과 동일하게 저장/공유할 수 있도록 Blob으로 보존한다.
+      const blob=dataUrlToBlob(imageSrc);
+      if(blob){
+        window.customBackgroundBlob=blob;
+        window.customBackgroundType='image';
+        window.backgroundPlaylistBlobs=[{blob,type:'image'}];
+      }else{
+        window.customBackgroundBlob=null;
+        window.customBackgroundType='';
+        window.backgroundPlaylistBlobs=[];
+      }
+      window.backgroundPlaylist=[{url:imageSrc,type:'image'}];
+
+      document.getElementById('backgroundLayer')?.classList.remove('default-space-active');
+      window.applyBackground?.(imageSrc,'image',true);
+
+      // 선택창을 즉시 닫아 시계 메인 화면에서 전체 사진을 확인하게 한다.
+      closeGraduationPanelsForFullPreview();
+      window.showToast?.(`✅ ${item.name} · 메인 화면 적용`);
+      return true;
+    }
+
     function setGraduationOutfit(key,showToast=true){
       const all=Object.values(GRADUATION_OUTFIT_PRESETS).flat();
       const item=all.find(x=>x.key===key);
@@ -4211,8 +4268,13 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
       const note=document.getElementById('graduationOutfitNote');
       if(note) note.textContent=`선택 완료: ${item.name} · 이 선택은 릴레이/타임캡슐 정보에 저장됩니다.`;
 
+      // renderGraduationOutfits()에서 상태를 복원할 때는 미리보기만 갱신하고,
+      // 사용자가 실제 카드를 눌렀을 때(showToast=true)만 메인 화면에 바로 적용한다.
+      if(showToast){
+        applyGraduationOutfitToMain(key,item);
+      }
+
       try{ saveCurrentStateLocally?.(); }catch(_){}
-      if(showToast) window.showToast?.(`✅ 졸업의상 선택 · ${item.name}`);
       return true;
     }
     window.setGraduationOutfit=setGraduationOutfit;
