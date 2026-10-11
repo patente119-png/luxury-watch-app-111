@@ -1124,6 +1124,11 @@ window.addEventListener('DOMContentLoaded', async () => {
       width:244px;
       max-height:360px;
       overflow:auto;
+      z-index:96;
+      border-left:1.5px solid rgba(200,210,220,.9);
+      border-radius:8px;
+      background:rgba(8,14,24,.97);
+      box-shadow:0 10px 28px rgba(0,0,0,.82);
     }
     .graduation-main-panel .graduation-outfit-grid{
       grid-template-columns:repeat(2,minmax(0,1fr));
@@ -2000,7 +2005,7 @@ window.addEventListener('DOMContentLoaded', async () => {
                 </div>
 
                 <div class="top-controls">
-                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v3.2.37 · graduation tab fixed">⚙️</button>
+                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v3.2.39 · graduation panel visible">⚙️</button>
 
                   <div id="mainMenuPanel" class="control-panel" style="left:41px;top:0" hidden>
                     <button type="button" class="btn-custom" onclick="toggleSubPanel('backgroundPanel', event)">꾸미기</button>
@@ -4251,6 +4256,7 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
       event?.stopPropagation?.();
       const panel=document.getElementById('graduationMainPanel');
       const main=document.getElementById('mainMenuPanel');
+      const wrap=document.getElementById('graduationOutfitWrap');
       if(!panel) return;
       const open=panel.hidden;
       document.querySelectorAll('.control-panel').forEach(p=>{
@@ -4258,6 +4264,9 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
       });
       panel.hidden=!open;
       if(open){
+        if(wrap) wrap.hidden=false;
+        panel.style.display='flex';
+        panel.style.zIndex='96';
         const categorySel=document.getElementById('userCategorySelect');
         if(categorySel) categorySel.value='graduation';
         const stage=document.getElementById('graduationStageSelect');
@@ -4269,9 +4278,13 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
           try{ layoutMainMenu(); }catch(_){}
           try{ layoutSubMenu?.('graduationMainPanel'); }catch(_){}
         });
+      }else{
+        panel.style.display='';
       }
     }
     window.toggleGraduationMainPanel=toggleGraduationMainPanel;
+    const __graduationWrap=document.getElementById('graduationOutfitWrap');
+    if(__graduationWrap) __graduationWrap.hidden=false;
 
     function toggleGraduationOutfitPanel(event){
       event?.stopPropagation?.();
@@ -5236,7 +5249,7 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
       let globalLeft = side==='right' ? m.right+4 : m.left-p.width-4;
 
       // 해당 버튼 행 근처에서 열되, 큰 패널은 시계 안에 전부 보이도록 자동 보정
-      const rowOffsets={backgroundPanel:0,soundPanel:40,saveSharePanel:80};
+      const rowOffsets={backgroundPanel:0,soundPanel:40,saveSharePanel:80,graduationMainPanel:120};
       let globalTop=m.top+(rowOffsets[panelId]||0);
 
       // 반대쪽에 공간이 더 많으면 자동 반전
@@ -5606,8 +5619,6 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
       });
       const secondHandGroup=document.getElementById('secondHandPresetGroup');
       if(secondHandGroup) secondHandGroup.hidden=true;
-      const graduationGroup=document.getElementById('graduationOutfitWrap');
-      if(graduationGroup && panelId!=='backgroundPanel') graduationGroup.hidden=true;
       target.hidden=!open;
       if(open) requestAnimationFrame(()=>{ layoutMainMenu(); layoutSubMenu(panelId); });
     }
