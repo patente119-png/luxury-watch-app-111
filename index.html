@@ -1106,6 +1106,14 @@ window.addEventListener('DOMContentLoaded', async () => {
       text-align:left;
     }
     .category-narration-menu .style-select{width:100%;}
+    .graduation-main-panel{
+      width:244px;
+      max-height:360px;
+      overflow:auto;
+    }
+    .graduation-main-panel .graduation-outfit-grid{
+      grid-template-columns:repeat(2,minmax(0,1fr));
+    }
     .graduation-outfit-wrap{
       display:grid;
       gap:5px;
@@ -1948,12 +1956,13 @@ window.addEventListener('DOMContentLoaded', async () => {
                 </div>
 
                 <div class="top-controls">
-                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v3.2.35 · graduation photo thumbnails">⚙️</button>
+                  <button type="button" id="mainMenuBtn" class="btn-menu-main" onclick="toggleControlPanel('mainMenuPanel', event)" title="설정 · TIME RELAY v3.2.36 · graduation main tab">⚙️</button>
 
                   <div id="mainMenuPanel" class="control-panel" style="left:41px;top:0" hidden>
                     <button type="button" class="btn-custom" onclick="toggleSubPanel('backgroundPanel', event)">꾸미기</button>
                     <button type="button" class="btn-custom" onclick="toggleSubPanel('soundPanel', event)">쓰기</button>
                     <button type="button" class="btn-custom" onclick="toggleSubPanel('saveSharePanel', event)">보내기</button>
+                    <button type="button" class="btn-custom" onclick="toggleGraduationMainPanel(event)">🎓 졸업</button>
                     <button type="button" class="btn-custom" onclick="resetUIPositions(); event.stopPropagation();">↺ 위치 복원</button>
                   </div>
 
@@ -1977,9 +1986,6 @@ window.addEventListener('DOMContentLoaded', async () => {
                       <option value="contain" selected>사진 · 전체 보기</option>
                       <option value="cover">사진 · 가득 채우기</option>
                     </select>
-                    <button type="button" id="graduationCornerBtn" class="btn-custom" onclick="toggleGraduationOutfitPanel(event)">🎓 졸업의상 · 미래의 나</button>
-<div id="graduationOutfitWrap" class="graduation-outfit-wrap" hidden>
-                      <div class="graduation-outfit-title">🎓 졸업의상 · 미래의 나</div>
                       <select id="graduationStageSelect" class="style-select" title="학령" onchange="renderGraduationOutfits()">
                         <option value="kindergarten">유치원 · 어린이집</option>
                         <option value="elementary">초등학교</option>
@@ -2018,6 +2024,11 @@ window.addEventListener('DOMContentLoaded', async () => {
                     <input type="file" id="filePhotoUpload" accept="image/*" multiple style="display:none">
                     <input type="file" id="fileVideoUpload" accept="video/*" multiple style="display:none">
                     <input type="file" id="fileMeteoriteUpload" accept="image/*" style="display:none">
+                  </div>
+
+                  <div id="graduationMainPanel" class="control-panel compact-action-panel graduation-main-panel" style="left:159px;top:120px" hidden>
+<div id="graduationOutfitWrap" class="graduation-outfit-wrap">
+                      <div class="graduation-outfit-title">🎓 졸업의상 · 미래의 나</div>
                   </div>
 
                   <div id="soundPanel" class="control-panel compact-action-panel" style="left:159px;top:40px" hidden>
@@ -4161,6 +4172,26 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
     }
     window.renderGraduationOutfits=renderGraduationOutfits;
 
+    function toggleGraduationMainPanel(event){
+      event?.stopPropagation?.();
+      const panel=document.getElementById('graduationMainPanel');
+      if(!panel) return;
+      const open=panel.hidden;
+      document.querySelectorAll('.control-panel').forEach(p=>{
+        if(p!==document.getElementById('mainMenuPanel')) p.hidden=true;
+      });
+      panel.hidden=!open;
+      if(open){
+        const categorySel=document.getElementById('userCategorySelect');
+        if(categorySel) categorySel.value='graduation';
+        renderGraduationOutfits();
+        requestAnimationFrame(()=>{
+          try{ layoutMainMenu(); }catch(_){}
+        });
+      }
+    }
+    window.toggleGraduationMainPanel=toggleGraduationMainPanel;
+
     function toggleGraduationOutfitPanel(event){
       event?.stopPropagation?.();
       const wrap=document.getElementById('graduationOutfitWrap');
@@ -4192,7 +4223,6 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
       const isGraduation=(document.getElementById('userCategorySelect')?.value||'general')==='graduation';
       const wrap=document.getElementById('graduationOutfitWrap');
       if(isGraduation && wrap){
-        wrap.hidden=false;
         const stage=document.getElementById('graduationStageSelect');
         const category=document.getElementById('graduationOutfitCategorySelect');
         if(stage) stage.value=window.selectedGraduationStage||'high';
