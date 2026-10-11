@@ -1169,6 +1169,36 @@ window.addEventListener('DOMContentLoaded', async () => {
       display:block;
       background:#0b1220;
       box-shadow:0 0 0 1px rgba(255,255,255,.08) inset;
+      pointer-events:none;
+    }
+    .graduation-outfit-card .go-name{pointer-events:none;}
+    .graduation-outfit-card{
+      cursor:pointer;
+      touch-action:manipulation;
+      user-select:none;
+      -webkit-user-select:none;
+    }
+    .graduation-outfit-preview{
+      display:grid;
+      gap:5px;
+      padding:5px;
+      border:1px solid rgba(246,211,101,.28);
+      border-radius:7px;
+      background:rgba(4,10,20,.72);
+    }
+    .graduation-outfit-preview img{
+      width:100%;
+      height:132px;
+      object-fit:cover;
+      border-radius:6px;
+      display:block;
+      background:#08111f;
+    }
+    .graduation-outfit-preview-name{
+      font-size:10.5px;
+      font-weight:900;
+      color:#fff3b0;
+      text-align:center;
     }
     .graduation-outfit-card .go-name{
       font-size:9.5px;
@@ -2039,6 +2069,10 @@ window.addEventListener('DOMContentLoaded', async () => {
                         <option value="trend">현재 유행</option>
                         <option value="memory">감성 · 추억</option>
                       </select>
+                      <div id="graduationOutfitPreview" class="graduation-outfit-preview">
+                        <img id="graduationOutfitPreviewImg" alt="선택한 졸업의상 미리보기">
+                        <div id="graduationOutfitPreviewName" class="graduation-outfit-preview-name">의상을 선택해주세요</div>
+                      </div>
                       <div id="graduationOutfitGrid" class="graduation-outfit-grid"></div>
                       <div id="graduationOutfitNote" class="graduation-outfit-note">사진은 의상 스타일 예시입니다. 선택값은 졸업 릴레이/타임캡슐 정보에 함께 저장됩니다.</div>
                     </div>
@@ -4148,17 +4182,33 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
     window.selectedGraduationStage = window.selectedGraduationStage || 'high';
     window.selectedGraduationOutfitCategory = window.selectedGraduationOutfitCategory || 'basic';
 
-    function setGraduationOutfit(key){
-      window.selectedGraduationOutfit=key || 'traditional_gown';
-      document.querySelectorAll('.graduation-outfit-card').forEach(btn=>{
-        btn.classList.toggle('is-selected', btn.dataset.outfitKey===window.selectedGraduationOutfit);
-      });
+    function setGraduationOutfit(key,showToast=true){
       const all=Object.values(GRADUATION_OUTFIT_PRESETS).flat();
-      const item=all.find(x=>x.key===window.selectedGraduationOutfit);
+      const item=all.find(x=>x.key===key);
+      if(!item) return false;
+
+      window.selectedGraduationOutfit=key;
+
+      document.querySelectorAll('.graduation-outfit-card').forEach(btn=>{
+        btn.classList.toggle('is-selected', btn.dataset.outfitKey===key);
+        btn.setAttribute('aria-pressed', btn.dataset.outfitKey===key ? 'true' : 'false');
+      });
+
+      const previewImg=document.getElementById('graduationOutfitPreviewImg');
+      const previewName=document.getElementById('graduationOutfitPreviewName');
+      const imageSrc=GRADUATION_OUTFIT_IMAGES[key]||'';
+      if(previewImg){
+        previewImg.src=imageSrc;
+        previewImg.alt=`${item.name} 의상 미리보기`;
+      }
+      if(previewName) previewName.textContent=`✓ ${item.name}`;
+
       const note=document.getElementById('graduationOutfitNote');
-      if(note && item) note.textContent=`선택: ${item.name} · 졸업 릴레이/타임캡슐 정보에 함께 저장`;
+      if(note) note.textContent=`선택 완료: ${item.name} · 이 선택은 릴레이/타임캡슐 정보에 저장됩니다.`;
+
       try{ saveCurrentStateLocally?.(); }catch(_){}
-      window.showToast?.(`🎓 졸업의상 선택 · ${item?.name || key}`);
+      if(showToast) window.showToast?.(`✅ 졸업의상 선택 · ${item.name}`);
+      return true;
     }
     window.setGraduationOutfit=setGraduationOutfit;
 
@@ -4171,7 +4221,7 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
       if(!grid) return;
       const items=(GRADUATION_OUTFIT_PRESETS[category]||[]).filter(item=>item.stages.includes(stage));
       grid.innerHTML=items.map(item=>`
-        <button type="button" class="btn-custom graduation-outfit-card ${item.key===window.selectedGraduationOutfit?'is-selected':''}" data-outfit-key="${item.key}" onclick="setGraduationOutfit('${item.key}')">
+        <button type="button" class="btn-custom graduation-outfit-card ${item.key===window.selectedGraduationOutfit?'is-selected':''}" data-outfit-key="${item.key}" aria-pressed="${item.key===window.selectedGraduationOutfit?'true':'false'}">
           <img class="go-photo" src="${GRADUATION_OUTFIT_IMAGES[item.key]||''}" alt="${item.name} 의상 예시">
           <span class="go-name">${item.icon} ${item.name}</span>
         </button>
@@ -4181,9 +4231,21 @@ document.getElementById('fileMeteoriteUpload').addEventListener('change',e=>{
       }
       document.querySelectorAll('.graduation-outfit-card').forEach(btn=>{
         btn.classList.toggle('is-selected', btn.dataset.outfitKey===window.selectedGraduationOutfit);
+        btn.setAttribute('aria-pressed', btn.dataset.outfitKey===window.selectedGraduationOutfit ? 'true' : 'false');
       });
+      setGraduationOutfit(window.selectedGraduationOutfit,false);
     }
     window.renderGraduationOutfits=renderGraduationOutfits;
+
+    // 이미지/텍스트 어디를 눌러도 카드 선택이 확실히 실행되도록 이벤트 위임
+    document.getElementById('graduationOutfitGrid')?.addEventListener('click',event=>{
+      const card=event.target.closest('.graduation-outfit-card');
+      if(!card) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const key=card.dataset.outfitKey;
+      if(key) setGraduationOutfit(key,true);
+    });
 
     function toggleGraduationMainPanel(event){
       event?.stopPropagation?.();
